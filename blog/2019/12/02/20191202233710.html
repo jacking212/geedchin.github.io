@@ -1,0 +1,357 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="k8s,k8s特性,admission webhook," />
+  
+
+  
+  
+    <meta name="description" content="k8s特性01 —— admission webhook" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>k8s特性01 —— admission webhook [ GeedChin ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+</head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="http://geedchin.com/images/logo.png">
+    <span class="title">GeedChin</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">首页</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives/" class="pure-menu-link">归档</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories/" class="pure-menu-link">分类</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags/" class="pure-menu-link">标签</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/search" class="pure-menu-link">搜索</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about/" class="pure-menu-link">关于</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        k8s特性01 —— admission webhook
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2019-12-02T15:37:10.000Z">
+        2019-12-02
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/admission-webhook/" rel="tag">admission webhook</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s/" rel="tag">k8s</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s%E7%89%B9%E6%80%A7/" rel="tag">k8s特性</a></li></ul>
+      </span>
+    </span>
+      <span class="slash">/</span>
+      <span class="read">
+      <span id="busuanzi_value_page_pv"></span> 点击
+    </span>
+      <!--span class="slash">/</span>
+      <span class="read">阅读耗时 </span-->
+    </header>
+
+    <div class="post-content">
+      <h1 id="admission-webhook-简介"><a href="#admission-webhook-简介" class="headerlink" title="admission webhook 简介"></a>admission webhook 简介</h1><blockquote>
+<p>k8s准入控制通过http回调实现，在这个http服务里可以对请求的参数进行修改或者验证。在k8s里，可修改的wehook资源类型是 <code>mutatingWebhookConfiguration</code>,验证的wenhook资源类型是 <code>validatingWebhookConfiguration</code>。在调用链中，mutatingWebhook优先于validatingWebhook执行。</p>
+</blockquote>
+<h1 id="利用service实现"><a href="#利用service实现" class="headerlink" title="利用service实现"></a>利用service实现</h1><blockquote>
+<p>demo地址：<a href="https://github.com/geedchin/k8s-webhook-demo" target="_blank" rel="noopener">k8s-webhook-demo</a></p>
+</blockquote>
+<h2 id="首先，通过k8s签发证书"><a href="#首先，通过k8s签发证书" class="headerlink" title="首先，通过k8s签发证书"></a>首先，通过k8s签发证书</h2><h3 id="创建k8s-csr-CertificateSigningRequest-资源"><a href="#创建k8s-csr-CertificateSigningRequest-资源" class="headerlink" title="创建k8s csr(CertificateSigningRequest)资源"></a>创建k8s csr(CertificateSigningRequest)资源</h3><blockquote>
+<p>首先在空白目录下生成自己的csr文件及私钥，根据实际情况修改hosts和其他内容</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span></pre></td><td class="code"><pre><span class="line">cat &lt;&lt;EOF | cfssl genkey - | cfssljson -bare server</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">2</span></pre></td><td class="code"><pre><span class="line">&#123;</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">3</span></pre></td><td class="code"><pre><span class="line">  "hosts": [</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">4</span></pre></td><td class="code"><pre><span class="line">    "10.1.1.50"</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">5</span></pre></td><td class="code"><pre><span class="line">  ],</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">6</span></pre></td><td class="code"><pre><span class="line">  "CN": "kubernetes",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">7</span></pre></td><td class="code"><pre><span class="line">  "key": &#123;</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">8</span></pre></td><td class="code"><pre><span class="line">    "algo": "ecdsa",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">9</span></pre></td><td class="code"><pre><span class="line">    "size": 256</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">10</span></pre></td><td class="code"><pre><span class="line">  &#125;,</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">11</span></pre></td><td class="code"><pre><span class="line">  "names": [</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">12</span></pre></td><td class="code"><pre><span class="line">    &#123;</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">13</span></pre></td><td class="code"><pre><span class="line">      "C": "CN",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">14</span></pre></td><td class="code"><pre><span class="line">      "ST": "SZ",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">15</span></pre></td><td class="code"><pre><span class="line">      "L": "SZ",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">16</span></pre></td><td class="code"><pre><span class="line">      "O": "k8s",</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">17</span></pre></td><td class="code"><pre><span class="line">      "OU": "System"</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">18</span></pre></td><td class="code"><pre><span class="line">    &#125;</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">19</span></pre></td><td class="code"><pre><span class="line">  ]</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">20</span></pre></td><td class="code"><pre><span class="line">&#125;</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">21</span></pre></td><td class="code"><pre><span class="line">EOF</span></pre></td></tr></table></figure>
+<blockquote>
+<p>此时生成两个文件：server.csr, server-key.pem，server.csr用于向ca申请公钥，server-key.pem为服务的私钥。</p>
+<p>使用以下命令生成k8s中的csr资源对象：</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span></pre></td><td class="code"><pre><span class="line">cat &lt;&lt;EOF | kubectl apply -f -</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">2</span></pre></td><td class="code"><pre><span class="line">apiVersion: certificates.k8s.io/v1beta1</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">3</span></pre></td><td class="code"><pre><span class="line">kind: CertificateSigningRequest</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">4</span></pre></td><td class="code"><pre><span class="line">metadata:</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">5</span></pre></td><td class="code"><pre><span class="line">  name: my-csr</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">6</span></pre></td><td class="code"><pre><span class="line">spec:</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">7</span></pre></td><td class="code"><pre><span class="line">  request: $(cat server.csr | base64 | tr -d '\n')</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">8</span></pre></td><td class="code"><pre><span class="line">  usages:</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">9</span></pre></td><td class="code"><pre><span class="line">  - digital signature</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">10</span></pre></td><td class="code"><pre><span class="line">  - key encipherment</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">11</span></pre></td><td class="code"><pre><span class="line">  - server auth</span></pre></td></tr><tr><td class="gutter"><pre><span class="line">12</span></pre></td><td class="code"><pre><span class="line">EOF</span></pre></td></tr></table></figure>
+<blockquote>
+<p>执行以下命令通过申请： <code>kubectl certificate approve my-csr</code> <br><br>执行命令获取签发后的文件： <code>kubectl get csr my-csr -o jsonpath=&#39;{.status.certificate}&#39; | base64 --decode &gt; server.crt</code> <br><br>server.crt文件即为签发后的公钥</p>
+</blockquote>
+<h2 id="运行demo"><a href="#运行demo" class="headerlink" title="运行demo"></a>运行demo</h2><blockquote>
+<p>将<code>server.crt</code> 及 <code>server-key.pem</code> 文件放至demo项目 <code>file/</code> 文件夹下。<br>直接运行项目即可。</p>
+</blockquote>
+<h2 id="创建-mutatingWebhookConfiguration-资源对象"><a href="#创建-mutatingWebhookConfiguration-资源对象" class="headerlink" title="创建 mutatingWebhookConfiguration 资源对象"></a>创建 mutatingWebhookConfiguration 资源对象</h2><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">admissionregistration.k8s.io/v1</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">2</span></pre></td><td class="code"><pre><span class="line"><span class="attr">kind:</span> <span class="string">MutatingWebhookConfiguration</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">3</span></pre></td><td class="code"><pre><span class="line"><span class="attr">metadata:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">4</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">name:</span> <span class="string">my-webhook</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">5</span></pre></td><td class="code"><pre><span class="line"><span class="attr">webhooks:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">6</span></pre></td><td class="code"><pre><span class="line"><span class="bullet">-</span> <span class="attr">name:</span> <span class="string">webhook01.default.local</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">7</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">clientConfig:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">8</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">url:</span> <span class="string">https://10.1.1.50:1443/mutatingwebhook</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">9</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">service:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">10</span></pre></td><td class="code"><pre><span class="line">      <span class="attr">name:</span> <span class="string">my-webhook</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">11</span></pre></td><td class="code"><pre><span class="line">      <span class="attr">namespace:</span> <span class="string">default</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">12</span></pre></td><td class="code"><pre><span class="line">      <span class="attr">path:</span> <span class="string">/mutatingwebhook</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">13</span></pre></td><td class="code"><pre><span class="line">      <span class="attr">port:</span> <span class="number">443</span> </span></pre></td></tr><tr><td class="gutter"><pre><span class="line">14</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">caBundle:</span> <span class="string">//TODO</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">15</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">rules:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">16</span></pre></td><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="attr">operations:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">17</span></pre></td><td class="code"><pre><span class="line">    <span class="bullet">-</span> <span class="string">CREATE</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">18</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">apiGroups:</span> <span class="string">["*"]</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">19</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">apiVersions:</span> <span class="string">["*"]</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">20</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">resources:</span> <span class="string">["pods"]</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">21</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">scope:</span> <span class="string">Namespaced</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">22</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">namespaceSelector:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">23</span></pre></td><td class="code"><pre><span class="line">    <span class="attr">matchLabels:</span> </span></pre></td></tr><tr><td class="gutter"><pre><span class="line">24</span></pre></td><td class="code"><pre><span class="line">      <span class="attr">my-webhook:</span> <span class="string">"true"</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">25</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">sideEffects:</span> <span class="string">None</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">26</span></pre></td><td class="code"><pre><span class="line">  <span class="attr">admissionReviewVersions:</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">27</span></pre></td><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="string">v1</span></span></pre></td></tr><tr><td class="gutter"><pre><span class="line">28</span></pre></td><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="string">v1beta1</span></span></pre></td></tr></table></figure>
+<blockquote>
+<p>url根据实际情况填写<br>caBundle的值从集群config里取即可。路径：.clusters.cluster.certificate-authority-data<br>其他webhook的规则、namespaceSelector根据实际情况修改</p>
+</blockquote>
+<h2 id="测试"><a href="#测试" class="headerlink" title="测试"></a>测试</h2><blockquote>
+<ol>
+<li>根据上一步中设置的namespaceSelector规则，给待测试的namespace打上标签，我这里用的是default测试，执行命令打上标签<code>kubectl label ns default my-webhook=true</code></li>
+<li>在测试命名空间创建一个deployment，然后获取该deployment下的pod实例，即可查看到annotation里加上了webhook里打的patch内容</li>
+</ol>
+</blockquote>
+
+    </div>
+
+    <div>全文完。</div>
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">目录</strong>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#admission-webhook-简介"><span class="toc-text">admission webhook 简介</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#利用service实现"><span class="toc-text">利用service实现</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#首先，通过k8s签发证书"><span class="toc-text">首先，通过k8s签发证书</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#创建k8s-csr-CertificateSigningRequest-资源"><span class="toc-text">创建k8s csr(CertificateSigningRequest)资源</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#运行demo"><span class="toc-text">运行demo</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#创建-mutatingWebhookConfiguration-资源对象"><span class="toc-text">创建 mutatingWebhookConfiguration 资源对象</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#测试"><span class="toc-text">测试</span></a></li></ol></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+<div class="share" style="width: 100%;">
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;">请我喝咖啡</div>
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;max-width:500px;">
+      <div style="float:left;margin-left:50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">支付宝</div>
+        <image src="/resources/myqr/alipay.jpg"/>
+      </div>
+      <div style="float:left; margin-left: 50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">微信</div>
+        <image src="/resources/myqr/wechatpay.jpg"/>
+      </div>
+      <div style="clear:left;"></div>
+  </div>
+</div>
+
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/blog/2019/12/01/20191201215410.html" rel="next" title="k8s源码阅读——apiserver">
+          k8s源码阅读——apiserver
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://geedchin.com">首页</a> |
+        <a class="bottom-item" href="https://geedchin.com" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/geedchin" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+    
+<!--
+
+<script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+<script src='/resources/lib/js/mermaid@7.1.2.min.js'></script>
+
+-->
+    
+	  <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+      
+	  <script>
+	    if (window.mermaid) {
+	      mermaid.initialize({theme: 'forest'});
+	    }
+	  </script>
+	
+</footer>
+  
+  <!-- scripts list from theme config.yml -->
+  
+    <script src="//cdn.bootcss.com/zepto/1.2.0/zepto.min.js"></script>
+  
+    <script src="/js/xoxo.js"></script>
+  
+
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+</body>
+</html>

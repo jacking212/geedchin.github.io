@@ -1,6 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>k8s特性01 —— admission webhook</title>
+    <url>/blog/2019/12/02/20191202233710.html</url>
+    <content><![CDATA[<h1 id="admission-webhook-简介"><a href="#admission-webhook-简介" class="headerlink" title="admission webhook 简介"></a>admission webhook 简介</h1><blockquote>
+<p>k8s准入控制通过http回调实现，在这个http服务里可以对请求的参数进行修改或者验证。在k8s里，可修改的wehook资源类型是 <code>mutatingWebhookConfiguration</code>,验证的wenhook资源类型是 <code>validatingWebhookConfiguration</code>。在调用链中，mutatingWebhook优先于validatingWebhook执行。</p>
+</blockquote>
+<h1 id="利用service实现"><a href="#利用service实现" class="headerlink" title="利用service实现"></a>利用service实现</h1><blockquote>
+<p>demo地址：<a href="https://github.com/geedchin/k8s-webhook-demo" target="_blank" rel="noopener">k8s-webhook-demo</a></p>
+</blockquote>
+<h2 id="首先，通过k8s签发证书"><a href="#首先，通过k8s签发证书" class="headerlink" title="首先，通过k8s签发证书"></a>首先，通过k8s签发证书</h2><h3 id="创建k8s-csr-CertificateSigningRequest-资源"><a href="#创建k8s-csr-CertificateSigningRequest-资源" class="headerlink" title="创建k8s csr(CertificateSigningRequest)资源"></a>创建k8s csr(CertificateSigningRequest)资源</h3><blockquote>
+<p>首先在空白目录下生成自己的csr文件及私钥，根据实际情况修改hosts和其他内容</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="code"><pre><span class="line">cat &lt;&lt;EOF | cfssl genkey - | cfssljson -bare server</span></pre></td></tr><tr><td class="code"><pre><span class="line">&#123;</span></pre></td></tr><tr><td class="code"><pre><span class="line">  "hosts": [</span></pre></td></tr><tr><td class="code"><pre><span class="line">    "10.1.1.50"</span></pre></td></tr><tr><td class="code"><pre><span class="line">  ],</span></pre></td></tr><tr><td class="code"><pre><span class="line">  "CN": "kubernetes",</span></pre></td></tr><tr><td class="code"><pre><span class="line">  "key": &#123;</span></pre></td></tr><tr><td class="code"><pre><span class="line">    "algo": "ecdsa",</span></pre></td></tr><tr><td class="code"><pre><span class="line">    "size": 256</span></pre></td></tr><tr><td class="code"><pre><span class="line">  &#125;,</span></pre></td></tr><tr><td class="code"><pre><span class="line">  "names": [</span></pre></td></tr><tr><td class="code"><pre><span class="line">    &#123;</span></pre></td></tr><tr><td class="code"><pre><span class="line">      "C": "CN",</span></pre></td></tr><tr><td class="code"><pre><span class="line">      "ST": "SZ",</span></pre></td></tr><tr><td class="code"><pre><span class="line">      "L": "SZ",</span></pre></td></tr><tr><td class="code"><pre><span class="line">      "O": "k8s",</span></pre></td></tr><tr><td class="code"><pre><span class="line">      "OU": "System"</span></pre></td></tr><tr><td class="code"><pre><span class="line">    &#125;</span></pre></td></tr><tr><td class="code"><pre><span class="line">  ]</span></pre></td></tr><tr><td class="code"><pre><span class="line">&#125;</span></pre></td></tr><tr><td class="code"><pre><span class="line">EOF</span></pre></td></tr></table></figure>
+<blockquote>
+<p>此时生成两个文件：server.csr, server-key.pem，server.csr用于向ca申请公钥，server-key.pem为服务的私钥。</p>
+<p>使用以下命令生成k8s中的csr资源对象：</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="code"><pre><span class="line">cat &lt;&lt;EOF | kubectl apply -f -</span></pre></td></tr><tr><td class="code"><pre><span class="line">apiVersion: certificates.k8s.io/v1beta1</span></pre></td></tr><tr><td class="code"><pre><span class="line">kind: CertificateSigningRequest</span></pre></td></tr><tr><td class="code"><pre><span class="line">metadata:</span></pre></td></tr><tr><td class="code"><pre><span class="line">  name: my-csr</span></pre></td></tr><tr><td class="code"><pre><span class="line">spec:</span></pre></td></tr><tr><td class="code"><pre><span class="line">  request: $(cat server.csr | base64 | tr -d '\n')</span></pre></td></tr><tr><td class="code"><pre><span class="line">  usages:</span></pre></td></tr><tr><td class="code"><pre><span class="line">  - digital signature</span></pre></td></tr><tr><td class="code"><pre><span class="line">  - key encipherment</span></pre></td></tr><tr><td class="code"><pre><span class="line">  - server auth</span></pre></td></tr><tr><td class="code"><pre><span class="line">EOF</span></pre></td></tr></table></figure>
+<blockquote>
+<p>执行以下命令通过申请： <code>kubectl certificate approve my-csr</code> <br><br>执行命令获取签发后的文件： <code>kubectl get csr my-csr -o jsonpath=&#39;{.status.certificate}&#39; | base64 --decode &gt; server.crt</code> <br><br>server.crt文件即为签发后的公钥</p>
+</blockquote>
+<h2 id="运行demo"><a href="#运行demo" class="headerlink" title="运行demo"></a>运行demo</h2><blockquote>
+<p>将<code>server.crt</code> 及 <code>server-key.pem</code> 文件放至demo项目 <code>file/</code> 文件夹下。<br>直接运行项目即可。</p>
+</blockquote>
+<h2 id="创建-mutatingWebhookConfiguration-资源对象"><a href="#创建-mutatingWebhookConfiguration-资源对象" class="headerlink" title="创建 mutatingWebhookConfiguration 资源对象"></a>创建 mutatingWebhookConfiguration 资源对象</h2><figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">admissionregistration.k8s.io/v1</span></span></pre></td></tr><tr><td class="code"><pre><span class="line"><span class="attr">kind:</span> <span class="string">MutatingWebhookConfiguration</span></span></pre></td></tr><tr><td class="code"><pre><span class="line"><span class="attr">metadata:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">name:</span> <span class="string">my-webhook</span></span></pre></td></tr><tr><td class="code"><pre><span class="line"><span class="attr">webhooks:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line"><span class="bullet">-</span> <span class="attr">name:</span> <span class="string">webhook01.default.local</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">clientConfig:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">url:</span> <span class="string">https://10.1.1.50:1443/mutatingwebhook</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">service:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">      <span class="attr">name:</span> <span class="string">my-webhook</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">      <span class="attr">namespace:</span> <span class="string">default</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">      <span class="attr">path:</span> <span class="string">/mutatingwebhook</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">      <span class="attr">port:</span> <span class="number">443</span> </span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">caBundle:</span> <span class="string">//TODO</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">rules:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="attr">operations:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="bullet">-</span> <span class="string">CREATE</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">apiGroups:</span> <span class="string">["*"]</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">apiVersions:</span> <span class="string">["*"]</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">resources:</span> <span class="string">["pods"]</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">scope:</span> <span class="string">Namespaced</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">namespaceSelector:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">    <span class="attr">matchLabels:</span> </span></pre></td></tr><tr><td class="code"><pre><span class="line">      <span class="attr">my-webhook:</span> <span class="string">"true"</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">sideEffects:</span> <span class="string">None</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="attr">admissionReviewVersions:</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="string">v1</span></span></pre></td></tr><tr><td class="code"><pre><span class="line">  <span class="bullet">-</span> <span class="string">v1beta1</span></span></pre></td></tr></table></figure>
+<blockquote>
+<p>url根据实际情况填写<br>caBundle的值从集群config里取即可。路径：.clusters.cluster.certificate-authority-data<br>其他webhook的规则、namespaceSelector根据实际情况修改</p>
+</blockquote>
+<h2 id="测试"><a href="#测试" class="headerlink" title="测试"></a>测试</h2><blockquote>
+<ol>
+<li>根据上一步中设置的namespaceSelector规则，给待测试的namespace打上标签，我这里用的是default测试，执行命令打上标签<code>kubectl label ns default my-webhook=true</code></li>
+<li>在测试命名空间创建一个deployment，然后获取该deployment下的pod实例，即可查看到annotation里加上了webhook里打的patch内容</li>
+</ol>
+</blockquote>
+]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s特性</category>
+        <category>admission webhook</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s特性</tag>
+        <tag>admission webhook</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>k8s源码阅读——apiserver</title>
+    <url>/blog/2019/12/01/20191201215410.html</url>
+    <content><![CDATA[<h1 id="整体："><a href="#整体：" class="headerlink" title="整体："></a>整体：</h1>]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s源码阅读</category>
+        <category>apiserver</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s源码阅读</tag>
+        <tag>apiserver</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>K8S调度器（1）</title>
     <url>/blog/2019/08/03/20190803202810.html</url>
     <content><![CDATA[<h1 id="调度器概述"><a href="#调度器概述" class="headerlink" title="调度器概述"></a>调度器概述</h1><p>K8S调度器主要负责将Pod调度到某Node上运行。可以把调度器看做一个黑盒，输入为：pod,nodeList，输出为node，即给定pod和node列表，返回一个将pod调度到某node的结果。</p>
