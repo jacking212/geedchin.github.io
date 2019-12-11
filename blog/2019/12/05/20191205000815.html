@@ -1,0 +1,444 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="网络基础知识,TCP协议," />
+  
+
+  
+  
+    <meta name="description" content="TCP协议" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>TCP协议 [ GeedChin ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+</head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="http://geedchin.com/images/logo.png">
+    <span class="title">GeedChin</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">首页</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives/" class="pure-menu-link">归档</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories/" class="pure-menu-link">分类</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags/" class="pure-menu-link">标签</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/search" class="pure-menu-link">搜索</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about/" class="pure-menu-link">关于</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        TCP协议
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2019-12-04T16:08:15.000Z">
+        2019-12-05
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/TCP%E5%8D%8F%E8%AE%AE/" rel="tag">TCP协议</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/%E7%BD%91%E7%BB%9C%E5%9F%BA%E7%A1%80%E7%9F%A5%E8%AF%86/" rel="tag">网络基础知识</a></li></ul>
+      </span>
+    </span>
+      <span class="slash">/</span>
+      <span class="read">
+      <span id="busuanzi_value_page_pv"></span> 点击
+    </span>
+      <!--span class="slash">/</span>
+      <span class="read">阅读耗时 </span-->
+    </header>
+
+    <div class="post-content">
+      <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><blockquote>
+<p>今天看到一个分享，有讲到使用http请求时踩到了一个坑：服务端 <code>TIME_WAIT</code> 过多导致服务变得不可用。<br>通过这个案例来复习一下tcp协议，并分析原因和解决问题。</p>
+</blockquote>
+<h1 id="TCP协议"><a href="#TCP协议" class="headerlink" title="TCP协议"></a>TCP协议</h1><h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><blockquote>
+<p>TCP协议面向应用层提供一种面向连接的、可靠的字节流服务，它处于7层网络协议的第4层。</p>
+<ol>
+<li>面向连接意味着两个应用在使用TCP协议交互时要首先建立连接(后续将讲到如何建立连接和关闭连接)</li>
+<li>可靠的服务表明由TCP协议交付给应用的数据是可靠的。可靠性指的是数据能够被 <code>正确地</code> <code>有序地</code> 传输</li>
+</ol>
+</blockquote>
+<h3 id="协议首部"><a href="#协议首部" class="headerlink" title="协议首部"></a>协议首部</h3><blockquote>
+<!-- ![TCP协议头](/resources/post_pic/2019/12/tcp_header.jpg "TCP协议头") -->
+<img src="/resources/post_pic/2019/12/tcp_header.jpg" width="80%" alt="TCP协议头" title="TCP协议头" align=center />
+
+<p>协议头部第一行，分别表明了TCP双方的端口号，结合IP层的源、目的地址IP可唯一确定一个TCP连接双方的信息。<br>第二行表示当前数据包编号，为TCP传输过程中标记数据编号，它用于TCP提供可靠数据传输时保证数据有序的依据<br>第三行表示对对方数据包的确认号。值为收到的数据编号+1<br>第四行，前4位表示TCP协议头部长度(限制了头部最长2^4-1字长，1个字长为32bit)，6位保留位之后为6位标志位：</p>
+<ol>
+<li>URG 紧急指针有效</li>
+<li>ACK 确认序号有效</li>
+<li>PSH 接收方应尽快将报文段交给应用层</li>
+<li>RST 重建连接</li>
+<li>SYN 同步序号发起一个连接</li>
+<li>FIN 发送端完成发送任务</li>
+</ol>
+<p>第四行后16位为窗口大小，用于TCP数据传输过程中拥塞控制<br>第五行为校验和与紧急指针。<br>选项中字段：TODO<br>数据包可能为空</p>
+</blockquote>
+<h3 id="TCP选项"><a href="#TCP选项" class="headerlink" title="TCP选项"></a>TCP选项</h3><blockquote>
+<p>TCP首部可包含选项部分。每个选项若干字节，00、01 为不带len字节的选项。带len字节的选项第一个字节表示类型，第二个字节表示该选项配置的长度len，后续跟len-2个字节的选项值</p>
+<ol>
+<li>00 选项表结束</li>
+<li>01 无操作</li>
+<li>02 xx 最大报文段长度，后续跟着的xx个字节数据表示长度具体值</li>
+<li>08 0a 时间戳，后续4字节时间戳值，4字节时间戳回显应答</li>
+</ol>
+</blockquote>
+<h2 id="TCP连接"><a href="#TCP连接" class="headerlink" title="TCP连接"></a>TCP连接</h2><h3 id="连接过程：三次握手"><a href="#连接过程：三次握手" class="headerlink" title="连接过程：三次握手"></a>连接过程：三次握手</h3><blockquote>
+<p>为了建立TCP连接，客户端程序与服务端程序共进行过程：</p>
+<p>这个过程共有3次交互，也被叫做3次握手。</p>
+<!-- ![TCP三次握手过程](/resources/post_pic/2019/12/tcp_3_handshake.jpg "TCP三次握手过程") -->
+<img src="/resources/post_pic/2019/12/tcp_3_handshake.jpg" width="80%" alt="TCP三次握手过程" title="TCP三次握手过程" align=center />
+
+<p>如图，大写 <code>SYN</code> <code>ACK</code> 表示的TCP协议头中的标志位，小写 <code>req</code>,<code>ack</code>表示TCP协议头中的传输数据编号和确认编号(握手过程中<code>syn</code>标志位一直为1)。</p>
+</blockquote>
+<p>首先看连接过程：</p>
+<blockquote>
+<ol>
+<li>客户端发起数据传输连接请求，<code>seq</code>值为 <code>x</code></li>
+<li>服务端收到客户端连接请求，回复确认<code>ACK</code>标志位为1,序号<code>ack=x+1</code>，同时发起服务端到客户端的连接请求，<code>seq</code>值位 <code>y</code>（标志位<code>ACK</code> <code>SYN</code>为1，<code>seq</code>值为<code>y</code>,<code>ack</code>值为<code>x+1</code>）</li>
+<li>客户端收到确认请求，建立起 客户端-》服务端连接。并回复服务端连接请求,<code>ACK</code>标志位为1，确认序号<code>ack=y+1</code>，当服务端收到确认序号时，建立起 服务端-》客户端 连接</li>
+</ol>
+</blockquote>
+<p>连接过程中的状态变化：</p>
+<blockquote>
+<p>客户端：</p>
+<ol>
+<li>一开始处于<code>CLOSE</code>状态，当主动发起连接请求后，状态变为<code>SYN_SENT</code></li>
+<li>当服务端收到请求并回复<code>ACK</code>，客户端收到返回包并回复服务端<code>ACK</code>后，状态由<code>SYN_SENT</code>变为<code>ESTABLISHED</code>，客户端-》服务端 连接建立</li>
+</ol>
+<p>服务端:</p>
+<ol>
+<li>一开始处于<code>CLOSE</code>状态，当被动接受连接请求后，状态变为 <code>SYN_RCVD</code></li>
+<li>当客户端收到请求并回复<code>ACK</code>，服务端收到<code>ACK</code>后，状态由 <code>SYN_RCVD</code>变为<code>ESTABLISHED</code>，服务端-》客户端连接建立</li>
+</ol>
+<p>至此，全双工的TCP连接建立完成，可以进行数据传输</p>
+</blockquote>
+<h3 id="断开过程：四次挥手"><a href="#断开过程：四次挥手" class="headerlink" title="断开过程：四次挥手"></a>断开过程：四次挥手</h3><blockquote>
+<p>断开一个连接需要经过四次交互，这是因为TCP连接是全双工工作，每个数据传输方向需要单独关闭。<br>当一方完成数据传输时就可以发送一个<code>FIN</code>来终止这个方向的连接,接收<code>FIN</code>的一端收到信号后不再读数据但是仍可以发送数据，可以等数据发送完毕再发<code>FIN</code>信号进行关闭该方向的连接。</p>
+<!-- ![TCP四次挥手过程](/resources/post_pic/2019/12/tcp_4_bye.jpg "TCP四次挥手过程") -->
+<img src="/resources/post_pic/2019/12/tcp_4_bye.jpg" width="80%" alt="TCP四次挥手过程" title="TCP四次挥手过程" align=center />
+
+</blockquote>
+<p>断开连接时交互过程：</p>
+<blockquote>
+<ol>
+<li>客户端数据发送完成后，向服务端发送<code>FIN</code>信号表明结束 <code>C-&gt;S</code>方向的连接</li>
+<li>服务端收到<code>FIN</code>信号，回复<code>ACK</code>，客户端收到<code>ACK</code>，<code>C-&gt;S</code>方向连接正式关闭</li>
+<li>服务端数据发送完成向客户端发送 <code>FIN</code>信号关闭<code>S-&gt;C</code>方向连接</li>
+<li>客户端收到<code>FIN</code>信号，回复<code>ACK</code>，服务端收到<code>ACK</code>，<code>S-&gt;C</code>方向连接正式关闭</li>
+</ol>
+</blockquote>
+<p>断开连接过程中的状态变化：</p>
+<blockquote>
+<p>主动断开方(图中的客户端)：</p>
+<ol>
+<li>一开始处于<code>ESTABLISHED</code>状态，当主动发起关闭连接请求后状态变为<code>FIN_WAIT_1</code>(等待对端响应)</li>
+<li>当收到确认响应后，状态由<code>FIN_WAIT_1</code>变为<code>FIN_WAIT_2</code>(等待对端关闭连接)</li>
+<li>当收到对端的关闭请求后，状态由<code>FIN_WAIT_2</code>变为<code>TIME_WAIT</code>(等待2个MSL[最大报文寿命,报文在网络传输过程中最大生存时间]超时)</li>
+<li>当经过2个MSL超时后，状态由<code>TIME_WAIT</code>变为<code>CLOSE</code></li>
+</ol>
+<p>被动断开方(图中的服务端)：</p>
+<ol>
+<li>一开始处于<code>ESTABLISHED</code>状态，当收到关闭连接请求后，状态变为<code>CLOSE_WAIT</code></li>
+<li>当服务端数据传输完毕，向对端发起关闭请求连接后，状态变为<code>LAST_ACK</code></li>
+<li>当收到对端<code>ACK</code>消息后，状态由<code>LAST_ACK</code>变为<code>CLOSE</code></li>
+</ol>
+<p>主动断开方<code>TIME_WAIT</code>存在的必要性：<br>如果没有2MSL的<code>TIME_WAIT</code>状态，当主动断开方发送的<code>ACK</code>失败时，另一端会重发<code>FIN</code>请求，而这时，如果原来的连接被复用就会出问题。有了<code>TIME_WAIT</code>状态后，主动断开方的<code>ACK</code>应答如果在网络中丢失，那么另一端会重发<code>FIN</code>请求，它只需再次应答即可。当2个MSL时间后仍未收到重发的请求，则认为应答数据包正确到达对端。</p>
+</blockquote>
+<!--### 总结-->
+
+
+<h2 id="TCP可靠性传输"><a href="#TCP可靠性传输" class="headerlink" title="TCP可靠性传输"></a>TCP可靠性传输</h2><h3 id="可靠性保证"><a href="#可靠性保证" class="headerlink" title="可靠性保证"></a>可靠性保证</h3><blockquote>
+<ol>
+<li>应用数据被分割成TCP认为最合适发送的数据段(区别于UDP数据包长度不变)，由TCP传给IP的信息单位成为报文段或段，后续将讲到如何确定报文段的长度。</li>
+<li>当TCP发送一个段后，它会启动一个定时器，等待目的端确认收到报文段。若不能及时收到确认将会重发报文段</li>
+<li>TCP收到另一端的数据后，它将发送一个确认，这个确认不是立即发送的，通常推迟几分之一秒(捎带ACK，如果同时需要发送数据给对端，将ACK捎带过去)</li>
+<li>TCP将保持它的首部和数据的检验和，这是一个端到端的检验和，目的是检测数据在传输过程中的任何变化。如果收到的段和检验和有差错，TCP将丢弃该段，等待发送端超时重传</li>
+<li>IP层交付的数据可能是失序的，TCP层会根据收到的数据重新排序，将数据以正确的顺序交付给上层</li>
+<li>IP层有可能收到重复数据，TCP会丢弃掉重复的数据</li>
+<li>TCP提供流量控制。TCP的对端都有固定大小的缓冲空间，TCP的接收端只允许另一端发送接收端缓冲区所能容纳的数据，这防止较快主机发送到慢主机时导致缓冲区溢出</li>
+</ol>
+</blockquote>
+<h3 id="最大报文段长度"><a href="#最大报文段长度" class="headerlink" title="最大报文段长度"></a>最大报文段长度</h3><blockquote>
+<p>最大报文段长度(MSS)表示TCP往另一端传输数据的最大块数据的长度。当开始建立连接的时候，连接的双方都会告知各自的MSS。MSS的值在TCP协议头的<code>选项</code>部分。</p>
+</blockquote>
+<h3 id="超时重传"><a href="#超时重传" class="headerlink" title="超时重传"></a>超时重传</h3><h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3>
+    </div>
+
+    <div>全文完。</div>
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">目录</strong>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#前言"><span class="toc-text">前言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#TCP协议"><span class="toc-text">TCP协议</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-text">简介</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#协议首部"><span class="toc-text">协议首部</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#TCP选项"><span class="toc-text">TCP选项</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP连接"><span class="toc-text">TCP连接</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#连接过程：三次握手"><span class="toc-text">连接过程：三次握手</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#断开过程：四次挥手"><span class="toc-text">断开过程：四次挥手</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP可靠性传输"><span class="toc-text">TCP可靠性传输</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#可靠性保证"><span class="toc-text">可靠性保证</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#最大报文段长度"><span class="toc-text">最大报文段长度</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#超时重传"><span class="toc-text">超时重传</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#拥塞控制"><span class="toc-text">拥塞控制</span></a></li></ol></li></ol></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+<div class="share" style="width: 100%;">
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;">请我喝咖啡</div>
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;max-width:500px;">
+      <div style="float:left;margin-left:50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">支付宝</div>
+        <image src="/resources/myqr/alipay.jpg"/>
+      </div>
+      <div style="float:left; margin-left: 50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">微信</div>
+        <image src="/resources/myqr/wechatpay.jpg"/>
+      </div>
+      <div style="clear:left;"></div>
+  </div>
+</div>
+
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/blog/2019/12/02/20191202233710.html" rel="next" title="k8s特性01 —— admission webhook">
+          k8s特性01 —— admission webhook
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/blog/2019/12/11/20191211215410.html" rel="prev" title="k8s源码阅读03——controller-manager">
+            k8s源码阅读03——controller-manager
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://geedchin.com">首页</a> |
+        <a class="bottom-item" href="https://geedchin.com" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/geedchin" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+    
+<!--
+
+<script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+<script src='/resources/lib/js/mermaid@7.1.2.min.js'></script>
+
+-->
+    
+	  <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+      
+	  <script>
+	    if (window.mermaid) {
+	      mermaid.initialize({theme: 'forest'});
+	    }
+	  </script>
+	
+</footer>
+  
+  <!-- scripts list from theme config.yml -->
+  
+    <script src="//cdn.bootcss.com/zepto/1.2.0/zepto.min.js"></script>
+  
+    <script src="/js/xoxo.js"></script>
+  
+
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+</body>
+</html>

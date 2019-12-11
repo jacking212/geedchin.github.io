@@ -125,7 +125,10 @@
 <h2 id="k8s-1-12以下版本kubelet使用configmap后无法删除pod"><a href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod" class="headerlink" title="k8s 1.12以下版本kubelet使用configmap后无法删除pod"></a>k8s 1.12以下版本kubelet使用configmap后无法删除pod</h2><blockquote>
 <p>原因：kubelet目录使用了软连接，umount时报错。解决：1.升级1.12后修复bug 2. /etc/systemd/system/kubelet.service.d/10-kubeadm.conf中启动命令加上参数 –root-dir=/app/…kubelet 直接将kubelet目录改成实际目录</p>
 </blockquote>
-
+<h2 id="k8s-postStart执行程序导致容器无法ready"><a href="#k8s-postStart执行程序导致容器无法ready" class="headerlink" title="k8s postStart执行程序导致容器无法ready"></a>k8s postStart执行程序导致容器无法ready</h2><blockquote>
+<p>使用postStart执行程序时如果执行的是一个常驻程序，会导致容器一直处于 containerCreating状态</p>
+</blockquote>
+<h2 id="k8s-apiserver-调不通-service类型的webhook-TODO"><a href="#k8s-apiserver-调不通-service类型的webhook-TODO" class="headerlink" title="k8s apiserver 调不通 service类型的webhook  // TODO"></a>k8s apiserver 调不通 service类型的webhook  // TODO</h2>
     </div>
 
     <div>全文完。</div>
@@ -134,7 +137,7 @@
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#设计类问题"><span class="toc-text">设计类问题</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#集群Master高可用"><span class="toc-text">集群Master高可用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#不同集群Pod间网络互通"><span class="toc-text">不同集群Pod间网络互通</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#踩坑系列"><span class="toc-text">踩坑系列</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#apiserver请求过多，直接hang死"><span class="toc-text">apiserver请求过多，直接hang死</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod"><span class="toc-text">k8s 1.12以下版本kubelet使用configmap后无法删除pod</span></a></li></ol></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#设计类问题"><span class="toc-text">设计类问题</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#集群Master高可用"><span class="toc-text">集群Master高可用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#不同集群Pod间网络互通"><span class="toc-text">不同集群Pod间网络互通</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#踩坑系列"><span class="toc-text">踩坑系列</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#apiserver请求过多，直接hang死"><span class="toc-text">apiserver请求过多，直接hang死</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod"><span class="toc-text">k8s 1.12以下版本kubelet使用configmap后无法删除pod</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-postStart执行程序导致容器无法ready"><span class="toc-text">k8s postStart执行程序导致容器无法ready</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-apiserver-调不通-service类型的webhook-TODO"><span class="toc-text">k8s apiserver 调不通 service类型的webhook  // TODO</span></a></li></ol></li></ol>
   </div>
 
 

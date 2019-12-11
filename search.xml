@@ -1,6 +1,146 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>k8s源码阅读03——controller-manager</title>
+    <url>/blog/2019/12/11/20191211215410.html</url>
+    <content><![CDATA[]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s源码阅读</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s源码阅读</tag>
+        <tag>controller-manager</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>TCP协议</title>
+    <url>/blog/2019/12/05/20191205000815.html</url>
+    <content><![CDATA[<h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><blockquote>
+<p>今天看到一个分享，有讲到使用http请求时踩到了一个坑：服务端 <code>TIME_WAIT</code> 过多导致服务变得不可用。<br>通过这个案例来复习一下tcp协议，并分析原因和解决问题。</p>
+</blockquote>
+<h1 id="TCP协议"><a href="#TCP协议" class="headerlink" title="TCP协议"></a>TCP协议</h1><h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><blockquote>
+<p>TCP协议面向应用层提供一种面向连接的、可靠的字节流服务，它处于7层网络协议的第4层。</p>
+<ol>
+<li>面向连接意味着两个应用在使用TCP协议交互时要首先建立连接(后续将讲到如何建立连接和关闭连接)</li>
+<li>可靠的服务表明由TCP协议交付给应用的数据是可靠的。可靠性指的是数据能够被 <code>正确地</code> <code>有序地</code> 传输</li>
+</ol>
+</blockquote>
+<h3 id="协议首部"><a href="#协议首部" class="headerlink" title="协议首部"></a>协议首部</h3><blockquote>
+<!-- ![TCP协议头](/resources/post_pic/2019/12/tcp_header.jpg "TCP协议头") -->
+<img src="/resources/post_pic/2019/12/tcp_header.jpg" width="80%" alt="TCP协议头" title="TCP协议头" align=center />
+
+<p>协议头部第一行，分别表明了TCP双方的端口号，结合IP层的源、目的地址IP可唯一确定一个TCP连接双方的信息。<br>第二行表示当前数据包编号，为TCP传输过程中标记数据编号，它用于TCP提供可靠数据传输时保证数据有序的依据<br>第三行表示对对方数据包的确认号。值为收到的数据编号+1<br>第四行，前4位表示TCP协议头部长度(限制了头部最长2^4-1字长，1个字长为32bit)，6位保留位之后为6位标志位：</p>
+<ol>
+<li>URG 紧急指针有效</li>
+<li>ACK 确认序号有效</li>
+<li>PSH 接收方应尽快将报文段交给应用层</li>
+<li>RST 重建连接</li>
+<li>SYN 同步序号发起一个连接</li>
+<li>FIN 发送端完成发送任务</li>
+</ol>
+<p>第四行后16位为窗口大小，用于TCP数据传输过程中拥塞控制<br>第五行为校验和与紧急指针。<br>选项中字段：TODO<br>数据包可能为空</p>
+</blockquote>
+<h3 id="TCP选项"><a href="#TCP选项" class="headerlink" title="TCP选项"></a>TCP选项</h3><blockquote>
+<p>TCP首部可包含选项部分。每个选项若干字节，00、01 为不带len字节的选项。带len字节的选项第一个字节表示类型，第二个字节表示该选项配置的长度len，后续跟len-2个字节的选项值</p>
+<ol>
+<li>00 选项表结束</li>
+<li>01 无操作</li>
+<li>02 xx 最大报文段长度，后续跟着的xx个字节数据表示长度具体值</li>
+<li>08 0a 时间戳，后续4字节时间戳值，4字节时间戳回显应答</li>
+</ol>
+</blockquote>
+<h2 id="TCP连接"><a href="#TCP连接" class="headerlink" title="TCP连接"></a>TCP连接</h2><h3 id="连接过程：三次握手"><a href="#连接过程：三次握手" class="headerlink" title="连接过程：三次握手"></a>连接过程：三次握手</h3><blockquote>
+<p>为了建立TCP连接，客户端程序与服务端程序共进行过程：</p>
+<p>这个过程共有3次交互，也被叫做3次握手。</p>
+<!-- ![TCP三次握手过程](/resources/post_pic/2019/12/tcp_3_handshake.jpg "TCP三次握手过程") -->
+<img src="/resources/post_pic/2019/12/tcp_3_handshake.jpg" width="80%" alt="TCP三次握手过程" title="TCP三次握手过程" align=center />
+
+<p>如图，大写 <code>SYN</code> <code>ACK</code> 表示的TCP协议头中的标志位，小写 <code>req</code>,<code>ack</code>表示TCP协议头中的传输数据编号和确认编号(握手过程中<code>syn</code>标志位一直为1)。</p>
+</blockquote>
+<p>首先看连接过程：</p>
+<blockquote>
+<ol>
+<li>客户端发起数据传输连接请求，<code>seq</code>值为 <code>x</code></li>
+<li>服务端收到客户端连接请求，回复确认<code>ACK</code>标志位为1,序号<code>ack=x+1</code>，同时发起服务端到客户端的连接请求，<code>seq</code>值位 <code>y</code>（标志位<code>ACK</code> <code>SYN</code>为1，<code>seq</code>值为<code>y</code>,<code>ack</code>值为<code>x+1</code>）</li>
+<li>客户端收到确认请求，建立起 客户端-》服务端连接。并回复服务端连接请求,<code>ACK</code>标志位为1，确认序号<code>ack=y+1</code>，当服务端收到确认序号时，建立起 服务端-》客户端 连接</li>
+</ol>
+</blockquote>
+<p>连接过程中的状态变化：</p>
+<blockquote>
+<p>客户端：</p>
+<ol>
+<li>一开始处于<code>CLOSE</code>状态，当主动发起连接请求后，状态变为<code>SYN_SENT</code></li>
+<li>当服务端收到请求并回复<code>ACK</code>，客户端收到返回包并回复服务端<code>ACK</code>后，状态由<code>SYN_SENT</code>变为<code>ESTABLISHED</code>，客户端-》服务端 连接建立</li>
+</ol>
+<p>服务端:</p>
+<ol>
+<li>一开始处于<code>CLOSE</code>状态，当被动接受连接请求后，状态变为 <code>SYN_RCVD</code></li>
+<li>当客户端收到请求并回复<code>ACK</code>，服务端收到<code>ACK</code>后，状态由 <code>SYN_RCVD</code>变为<code>ESTABLISHED</code>，服务端-》客户端连接建立</li>
+</ol>
+<p>至此，全双工的TCP连接建立完成，可以进行数据传输</p>
+</blockquote>
+<h3 id="断开过程：四次挥手"><a href="#断开过程：四次挥手" class="headerlink" title="断开过程：四次挥手"></a>断开过程：四次挥手</h3><blockquote>
+<p>断开一个连接需要经过四次交互，这是因为TCP连接是全双工工作，每个数据传输方向需要单独关闭。<br>当一方完成数据传输时就可以发送一个<code>FIN</code>来终止这个方向的连接,接收<code>FIN</code>的一端收到信号后不再读数据但是仍可以发送数据，可以等数据发送完毕再发<code>FIN</code>信号进行关闭该方向的连接。</p>
+<!-- ![TCP四次挥手过程](/resources/post_pic/2019/12/tcp_4_bye.jpg "TCP四次挥手过程") -->
+<img src="/resources/post_pic/2019/12/tcp_4_bye.jpg" width="80%" alt="TCP四次挥手过程" title="TCP四次挥手过程" align=center />
+
+</blockquote>
+<p>断开连接时交互过程：</p>
+<blockquote>
+<ol>
+<li>客户端数据发送完成后，向服务端发送<code>FIN</code>信号表明结束 <code>C-&gt;S</code>方向的连接</li>
+<li>服务端收到<code>FIN</code>信号，回复<code>ACK</code>，客户端收到<code>ACK</code>，<code>C-&gt;S</code>方向连接正式关闭</li>
+<li>服务端数据发送完成向客户端发送 <code>FIN</code>信号关闭<code>S-&gt;C</code>方向连接</li>
+<li>客户端收到<code>FIN</code>信号，回复<code>ACK</code>，服务端收到<code>ACK</code>，<code>S-&gt;C</code>方向连接正式关闭</li>
+</ol>
+</blockquote>
+<p>断开连接过程中的状态变化：</p>
+<blockquote>
+<p>主动断开方(图中的客户端)：</p>
+<ol>
+<li>一开始处于<code>ESTABLISHED</code>状态，当主动发起关闭连接请求后状态变为<code>FIN_WAIT_1</code>(等待对端响应)</li>
+<li>当收到确认响应后，状态由<code>FIN_WAIT_1</code>变为<code>FIN_WAIT_2</code>(等待对端关闭连接)</li>
+<li>当收到对端的关闭请求后，状态由<code>FIN_WAIT_2</code>变为<code>TIME_WAIT</code>(等待2个MSL[最大报文寿命,报文在网络传输过程中最大生存时间]超时)</li>
+<li>当经过2个MSL超时后，状态由<code>TIME_WAIT</code>变为<code>CLOSE</code></li>
+</ol>
+<p>被动断开方(图中的服务端)：</p>
+<ol>
+<li>一开始处于<code>ESTABLISHED</code>状态，当收到关闭连接请求后，状态变为<code>CLOSE_WAIT</code></li>
+<li>当服务端数据传输完毕，向对端发起关闭请求连接后，状态变为<code>LAST_ACK</code></li>
+<li>当收到对端<code>ACK</code>消息后，状态由<code>LAST_ACK</code>变为<code>CLOSE</code></li>
+</ol>
+<p>主动断开方<code>TIME_WAIT</code>存在的必要性：<br>如果没有2MSL的<code>TIME_WAIT</code>状态，当主动断开方发送的<code>ACK</code>失败时，另一端会重发<code>FIN</code>请求，而这时，如果原来的连接被复用就会出问题。有了<code>TIME_WAIT</code>状态后，主动断开方的<code>ACK</code>应答如果在网络中丢失，那么另一端会重发<code>FIN</code>请求，它只需再次应答即可。当2个MSL时间后仍未收到重发的请求，则认为应答数据包正确到达对端。</p>
+</blockquote>
+<!--### 总结-->
+
+
+<h2 id="TCP可靠性传输"><a href="#TCP可靠性传输" class="headerlink" title="TCP可靠性传输"></a>TCP可靠性传输</h2><h3 id="可靠性保证"><a href="#可靠性保证" class="headerlink" title="可靠性保证"></a>可靠性保证</h3><blockquote>
+<ol>
+<li>应用数据被分割成TCP认为最合适发送的数据段(区别于UDP数据包长度不变)，由TCP传给IP的信息单位成为报文段或段，后续将讲到如何确定报文段的长度。</li>
+<li>当TCP发送一个段后，它会启动一个定时器，等待目的端确认收到报文段。若不能及时收到确认将会重发报文段</li>
+<li>TCP收到另一端的数据后，它将发送一个确认，这个确认不是立即发送的，通常推迟几分之一秒(捎带ACK，如果同时需要发送数据给对端，将ACK捎带过去)</li>
+<li>TCP将保持它的首部和数据的检验和，这是一个端到端的检验和，目的是检测数据在传输过程中的任何变化。如果收到的段和检验和有差错，TCP将丢弃该段，等待发送端超时重传</li>
+<li>IP层交付的数据可能是失序的，TCP层会根据收到的数据重新排序，将数据以正确的顺序交付给上层</li>
+<li>IP层有可能收到重复数据，TCP会丢弃掉重复的数据</li>
+<li>TCP提供流量控制。TCP的对端都有固定大小的缓冲空间，TCP的接收端只允许另一端发送接收端缓冲区所能容纳的数据，这防止较快主机发送到慢主机时导致缓冲区溢出</li>
+</ol>
+</blockquote>
+<h3 id="最大报文段长度"><a href="#最大报文段长度" class="headerlink" title="最大报文段长度"></a>最大报文段长度</h3><blockquote>
+<p>最大报文段长度(MSS)表示TCP往另一端传输数据的最大块数据的长度。当开始建立连接的时候，连接的双方都会告知各自的MSS。MSS的值在TCP协议头的<code>选项</code>部分。</p>
+</blockquote>
+<h3 id="超时重传"><a href="#超时重传" class="headerlink" title="超时重传"></a>超时重传</h3><h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3>]]></content>
+      <categories>
+        <category>网络基础知识</category>
+        <category>TCP协议</category>
+      </categories>
+      <tags>
+        <tag>网络基础知识</tag>
+        <tag>TCP协议</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>k8s特性01 —— admission webhook</title>
     <url>/blog/2019/12/02/20191202233710.html</url>
     <content><![CDATA[<h1 id="admission-webhook-简介"><a href="#admission-webhook-简介" class="headerlink" title="admission webhook 简介"></a>admission webhook 简介</h1><blockquote>
@@ -47,13 +187,13 @@
       </tags>
   </entry>
   <entry>
-    <title>k8s源码阅读——apiserver</title>
+    <title>k8s源码阅读02——apiserver</title>
     <url>/blog/2019/12/01/20191201215410.html</url>
-    <content><![CDATA[<h1 id="整体："><a href="#整体：" class="headerlink" title="整体："></a>整体：</h1>]]></content>
+    <content><![CDATA[<h1 id="整体："><a href="#整体：" class="headerlink" title="整体："></a>整体：</h1><p>TODO: webhook中使用service方式时，apiserver的pod使用hostNetwork，实际是无法解析service fqdn域名的，那么，在apiserver中是如何正确地请求到webhook的。</p>
+]]></content>
       <categories>
         <category>k8s</category>
         <category>k8s源码阅读</category>
-        <category>apiserver</category>
       </categories>
       <tags>
         <tag>k8s</tag>
@@ -62,7 +202,7 @@
       </tags>
   </entry>
   <entry>
-    <title>K8S调度器（1）</title>
+    <title>k8s源码阅读01——K8S调度器（1）</title>
     <url>/blog/2019/08/03/20190803202810.html</url>
     <content><![CDATA[<h1 id="调度器概述"><a href="#调度器概述" class="headerlink" title="调度器概述"></a>调度器概述</h1><p>K8S调度器主要负责将Pod调度到某Node上运行。可以把调度器看做一个黑盒，输入为：pod,nodeList，输出为node，即给定pod和node列表，返回一个将pod调度到某node的结果。</p>
 <p>整个调度流程大致如下：</p>
@@ -103,12 +243,12 @@ id2-->|否|抢占
 ]]></content>
       <categories>
         <category>k8s</category>
-        <category>功能组件</category>
-        <category>调度器</category>
+        <category>k8s源码阅读</category>
       </categories>
       <tags>
         <tag>k8s</tag>
         <tag>k8s调度器</tag>
+        <tag>k8s源码阅读</tag>
       </tags>
   </entry>
   <entry>
@@ -1101,7 +1241,10 @@ gcMarkDone --> forEachP</pre>
 <h2 id="k8s-1-12以下版本kubelet使用configmap后无法删除pod"><a href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod" class="headerlink" title="k8s 1.12以下版本kubelet使用configmap后无法删除pod"></a>k8s 1.12以下版本kubelet使用configmap后无法删除pod</h2><blockquote>
 <p>原因：kubelet目录使用了软连接，umount时报错。解决：1.升级1.12后修复bug 2. /etc/systemd/system/kubelet.service.d/10-kubeadm.conf中启动命令加上参数 –root-dir=/app/…kubelet 直接将kubelet目录改成实际目录</p>
 </blockquote>
-]]></content>
+<h2 id="k8s-postStart执行程序导致容器无法ready"><a href="#k8s-postStart执行程序导致容器无法ready" class="headerlink" title="k8s postStart执行程序导致容器无法ready"></a>k8s postStart执行程序导致容器无法ready</h2><blockquote>
+<p>使用postStart执行程序时如果执行的是一个常驻程序，会导致容器一直处于 containerCreating状态</p>
+</blockquote>
+<h2 id="k8s-apiserver-调不通-service类型的webhook-TODO"><a href="#k8s-apiserver-调不通-service类型的webhook-TODO" class="headerlink" title="k8s apiserver 调不通 service类型的webhook  // TODO"></a>k8s apiserver 调不通 service类型的webhook  // TODO</h2>]]></content>
       <categories>
         <category>k8s</category>
         <category>总结</category>
@@ -1341,7 +1484,7 @@ gcMarkDone --> forEachP</pre>
       </tags>
   </entry>
   <entry>
-    <title>client-go源码阅读之-controller(+简单实现)</title>
+    <title>k8s源码阅读00——client-go之-controller(+简单实现)</title>
     <url>/blog/2019/06/06/20190606154010.html</url>
     <content><![CDATA[<blockquote>
 <p>本篇文章简单介绍controller实现过程中涉及到的client-go中的几个组件，并尝试使用简单的方式手撸一个可以实现一个类似client-go中<code>controller</code>功能的demo。</p>
@@ -1441,13 +1584,12 @@ gcMarkDone --> forEachP</pre>
 ]]></content>
       <categories>
         <category>k8s</category>
-        <category>功能组件</category>
-        <category>client-go</category>
+        <category>k8s源码阅读</category>
       </categories>
       <tags>
         <tag>k8s</tag>
-        <tag>client-go</tag>
-        <tag>controller</tag>
+        <tag>k8s源码阅读</tag>
+        <tag>client-go controller</tag>
       </tags>
   </entry>
   <entry>
