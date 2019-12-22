@@ -214,7 +214,10 @@
 <h3 id="最大报文段长度"><a href="#最大报文段长度" class="headerlink" title="最大报文段长度"></a>最大报文段长度</h3><blockquote>
 <p>最大报文段长度(MSS)表示TCP往另一端传输数据的最大块数据的长度。当开始建立连接的时候，连接的双方都会告知各自的MSS。MSS的值在TCP协议头的<code>选项</code>部分。</p>
 </blockquote>
-<h3 id="超时重传"><a href="#超时重传" class="headerlink" title="超时重传"></a>超时重传</h3><h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3>
+<h3 id="超时重传"><a href="#超时重传" class="headerlink" title="超时重传"></a>超时重传</h3><blockquote>
+<p>内核参数<code>net.ipv4.tcp_timestamps</code>控制tcp数据包里是否带有timestamp，如果带有，则接收到消息的时候会做时间过滤，不符合的会被丢掉。</p>
+</blockquote>
+<h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3>
     </div>
 
     <div>全文完。</div>
@@ -262,8 +265,8 @@
   
       <div class="post-nav-item post-nav-prev">
           
-          <a href="/blog/2019/12/11/20191211215410.html" rel="prev" title="k8s源码阅读03——controller-manager">
-            k8s源码阅读03——controller-manager
+          <a href="/blog/2019/12/11/20191211215410.html" rel="prev" title="k8s源码阅读03——controller-manager 之 deploymentController">
+            k8s源码阅读03——controller-manager 之 deploymentController
           </a>
           <span>〉</span>
         
@@ -440,5 +443,11 @@
 
 
 
+  <script type="text/javascript" src="/js/jquery-2.0.0.min.js"></script>
+  <script type="text/javascript" src="/js/click_show_text.js"></script>
+  <!--动态线条背景-->
+  <script type="text/javascript"
+  color="220,220,220" opacity='0.7' zIndex="-2" count="200" src="/js/canvas-nest.min.js">
+  </script>
 </body>
 </html>
