@@ -128,7 +128,33 @@
 <h2 id="k8s-postStart执行程序导致容器无法ready"><a href="#k8s-postStart执行程序导致容器无法ready" class="headerlink" title="k8s postStart执行程序导致容器无法ready"></a>k8s postStart执行程序导致容器无法ready</h2><blockquote>
 <p>使用postStart执行程序时如果执行的是一个常驻程序，会导致容器一直处于 containerCreating状态</p>
 </blockquote>
-<h2 id="k8s-apiserver-调不通-service类型的webhook-TODO"><a href="#k8s-apiserver-调不通-service类型的webhook-TODO" class="headerlink" title="k8s apiserver 调不通 service类型的webhook  // TODO"></a>k8s apiserver 调不通 service类型的webhook  // TODO</h2>
+<h2 id="k8s-apiserver-调不通-service类型的webhook-TODO"><a href="#k8s-apiserver-调不通-service类型的webhook-TODO" class="headerlink" title="k8s apiserver 调不通 service类型的webhook  // TODO"></a>k8s apiserver 调不通 service类型的webhook  // TODO</h2><h2 id="k8s-coredns主机多个servername时，随机解析-主机上配了容灾dns服务器"><a href="#k8s-coredns主机多个servername时，随机解析-主机上配了容灾dns服务器" class="headerlink" title="k8s coredns主机多个servername时，随机解析(主机上配了容灾dns服务器)"></a>k8s coredns主机多个servername时，随机解析(主机上配了容灾dns服务器)</h2><blockquote>
+<p>coredns configmap配置串行解析</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">forward . /etc/resolv.conf  &#123; </span><br><span class="line"> policy  sequential</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="k8s集群内数据包无法通过weave发送到指定pod-内核3-10-weave-2-4-0"><a href="#k8s集群内数据包无法通过weave发送到指定pod-内核3-10-weave-2-4-0" class="headerlink" title="k8s集群内数据包无法通过weave发送到指定pod(内核3.10,weave 2.4.0)"></a>k8s集群内数据包无法通过weave发送到指定pod(内核3.10,weave 2.4.0)</h2><blockquote>
+<p>原因(同时存在)：</p>
+<ol>
+<li>在低于3.14版本的内核中，bridge设备的mac地址发生变化的时候，local fdb未更新。<a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a4b816d8ba1c1917842dc3de97cbf8ef116e043e" target="_blank" rel="noopener">内核修复记录</a></li>
+<li>weave 2.4.0中，网桥执行initPrep时给网桥设置了mac地址，后边其他地方又修改了。<a href="https://github.com/weaveworks/weave/pull/3442" target="_blank" rel="noopener">weave修复记录</a></li>
+</ol>
+<p>解决办法(解决1个即可)：</p>
+<ol>
+<li>升级内核大于3.14(解决内核bug) </li>
+<li>升级weave版本到2.5.0以后(去掉了initPrep中给网桥初始化mac地址的代码)</li>
+</ol>
+</blockquote>
+<h2 id="内核参数-tcp-timestamps-开启导致的问题"><a href="#内核参数-tcp-timestamps-开启导致的问题" class="headerlink" title="内核参数 tcp_timestamps 开启导致的问题"></a>内核参数 tcp_timestamps 开启导致的问题</h2><blockquote>
+<p>高版本内核中移除了同一dst的timestamp缓存tcp timestamp的offsets随机生成，集群内部访问到外部时，经过主机会做NAT，端口复用的时候就会出现timestamp 比对端期望的小，导致对端把数据包丢弃，从而无法建立连接。</p>
+<p>cp: remove per-destination timestamp cache<br>Commit 8a5bd45f6616 (tcp: randomize tcp timestamp offsets for each connection)<br>randomizes TCP timestamps per connection.</p>
+<p>解决办法：</p>
+<ol>
+<li>关闭内核中 net.ipv4.tcp_timestamps</li>
+<li>关闭服务端内核配置： net.ipv4.tcp_tw_recycle (tcp_tw_resue?)</li>
+</ol>
+</blockquote>
+
     </div>
 
     <div>全文完。</div>
@@ -137,7 +163,7 @@
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#设计类问题"><span class="toc-text">设计类问题</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#集群Master高可用"><span class="toc-text">集群Master高可用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#不同集群Pod间网络互通"><span class="toc-text">不同集群Pod间网络互通</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#踩坑系列"><span class="toc-text">踩坑系列</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#apiserver请求过多，直接hang死"><span class="toc-text">apiserver请求过多，直接hang死</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod"><span class="toc-text">k8s 1.12以下版本kubelet使用configmap后无法删除pod</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-postStart执行程序导致容器无法ready"><span class="toc-text">k8s postStart执行程序导致容器无法ready</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-apiserver-调不通-service类型的webhook-TODO"><span class="toc-text">k8s apiserver 调不通 service类型的webhook  // TODO</span></a></li></ol></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#设计类问题"><span class="toc-text">设计类问题</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#集群Master高可用"><span class="toc-text">集群Master高可用</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#不同集群Pod间网络互通"><span class="toc-text">不同集群Pod间网络互通</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#踩坑系列"><span class="toc-text">踩坑系列</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#apiserver请求过多，直接hang死"><span class="toc-text">apiserver请求过多，直接hang死</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-1-12以下版本kubelet使用configmap后无法删除pod"><span class="toc-text">k8s 1.12以下版本kubelet使用configmap后无法删除pod</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-postStart执行程序导致容器无法ready"><span class="toc-text">k8s postStart执行程序导致容器无法ready</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-apiserver-调不通-service类型的webhook-TODO"><span class="toc-text">k8s apiserver 调不通 service类型的webhook  // TODO</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s-coredns主机多个servername时，随机解析-主机上配了容灾dns服务器"><span class="toc-text">k8s coredns主机多个servername时，随机解析(主机上配了容灾dns服务器)</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#k8s集群内数据包无法通过weave发送到指定pod-内核3-10-weave-2-4-0"><span class="toc-text">k8s集群内数据包无法通过weave发送到指定pod(内核3.10,weave 2.4.0)</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#内核参数-tcp-timestamps-开启导致的问题"><span class="toc-text">内核参数 tcp_timestamps 开启导致的问题</span></a></li></ol></li></ol>
   </div>
 
 

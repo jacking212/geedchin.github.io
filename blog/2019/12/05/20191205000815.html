@@ -217,7 +217,56 @@
 <h3 id="超时重传"><a href="#超时重传" class="headerlink" title="超时重传"></a>超时重传</h3><blockquote>
 <p>内核参数<code>net.ipv4.tcp_timestamps</code>控制tcp数据包里是否带有timestamp，如果带有，则接收到消息的时候会做时间过滤，不符合的会被丢掉。</p>
 </blockquote>
-<h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3>
+<h3 id="拥塞控制"><a href="#拥塞控制" class="headerlink" title="拥塞控制"></a>拥塞控制</h3><h4 id="滑动窗口"><a href="#滑动窗口" class="headerlink" title="滑动窗口"></a>滑动窗口</h4><p><img src="/resources/post_pic/2020/03/tcp_01_cwnd.jpg" alt="TCP滑动窗口" title="TCP滑动窗口"></p>
+<blockquote>
+<p>报文在发送过程中可能的状态：</p>
+<ol>
+<li>已发送</li>
+<li>可发送，但未发送</li>
+<li>可发送，已发送，但未收到ack</li>
+<li>不可发送<br>TCP发送数据的时候，会指定滑动窗口大小，如上图，滑动窗口大小为6,首先，看传输过程中，滑动窗口在3-8报文段时的情况。此时，1,2报文段处于状态①，9之后的报文段处于状态④；在窗口3-8内，都是可发送的报文，有处于状态1、2、3的，当客户端收到报文段5的ack时，3-5报文状态变为1，此时滑动窗口向右滑动3个位置，变成6-11。数据传输的过程中，发送窗口不断随着网络情况调整大小。</li>
+</ol>
+</blockquote>
+<h4 id="拥塞控制算法"><a href="#拥塞控制算法" class="headerlink" title="拥塞控制算法"></a>拥塞控制算法</h4><blockquote>
+<p>拥塞控制主要通过一定的算法，不断修改拥塞窗口大小(cwnd,congestion window)达到目的。主要用到以下几种算法：</p>
+<ol>
+<li>慢启动</li>
+<li>拥塞避免</li>
+<li>快速重传: 当发送数据端连续收到3次同一个数据包ack时，进入快速重传。此时 ssthresh值设为当前cwnd的一半，</li>
+</ol>
+</blockquote>
+<h5 id="慢启动"><a href="#慢启动" class="headerlink" title="慢启动"></a>慢启动</h5><blockquote>
+<p>cwnd从初始值1开始，每收到1个报文段ACK，cwnd增加1.(数据并发发送，在一定时间内如果无丢包，cwnd几乎呈指数级增加。起始值为1，收到这个包的ACK后cwnd+1，下次发送2个数据包，当2个数据包收到ACK后cwnd+2，再下次发送4个数据包，以此类推)<br>当cwnd值增加到ssthresh大小时，进入拥塞避免。</p>
+<p>进入慢启动过程有两种情况：</p>
+<ol>
+<li>刚刚建立连接，开始发送数据： 刚开始时，ssthresh值由连接双方协商，cwnd值为1。然后不断增加cwnd值，到达ssthresh值大小时进入拥塞避免</li>
+<li>链路发生拥塞，超时未收到ack： 发生拥塞时，ssthresh值变为cwnd一半，cwnd值变为1。然后通过慢启动算法不断增加cwnd，到达ssthresh值大小时进入拥塞避免</li>
+</ol>
+</blockquote>
+<h5 id="拥塞避免"><a href="#拥塞避免" class="headerlink" title="拥塞避免"></a>拥塞避免</h5><blockquote>
+<p>当cwnd的值到达慢启动ssthresh的值后，每个RTT(Round Trip Time，往返时延)cwnd+1。在拥塞避免阶段cwnd值线性增加</p>
+<p>进入拥塞避免有两种情况：</p>
+<ol>
+<li>由慢启动过程的2中情况转入拥塞避免：在慢启动中已列出2种情况</li>
+<li>由快速重传状态转入拥塞避免：发生快速重传时，ssthresh值大小变为cwnd的一半，cwnd值也变为原来的一半(此时ssthresh与cwnd一样大)。</li>
+</ol>
+<p>拥塞避免最后转换为2种状态：</p>
+<ol>
+<li>变为慢启动： 当发生超时时，状态转换为慢启动。</li>
+<li>变为快速重传： 当发生连续收到3个相同ack时，状态转换为快速重传</li>
+</ol>
+</blockquote>
+<h5 id="快速重传"><a href="#快速重传" class="headerlink" title="快速重传"></a>快速重传</h5><blockquote>
+<p>进入快速重传的情况：</p>
+<ol>
+<li>连续收到3次同一个数据包的ack：收到3次ack包很可能是由丢包引起的(在数据接收端，当数据包N丢失后，后续收到N+1,N+2的数据包时都会重复向数据发送端发送对N-1的ACK包。如果2次重复ACK，有可能是数据包乱序到达，3次重复ACK，很可能是丢包，4次，很大可能丢包。但是判断丢包用的重复ack次数值越大，对网络性能影响越大。折中取了3次)</li>
+</ol>
+</blockquote>
+<h5 id="图示"><a href="#图示" class="headerlink" title="图示"></a>图示</h5><ol>
+<li>状态转换<br><img src="/resources/post_pic/2020/03/tcp_02.jpg" alt="拥塞控制状态转换" title="拥塞控制状态转换"></li>
+<li>状态转换实例图<br><img src="/resources/post_pic/2020/03/tcp_03.png" alt="拥塞控制状态转换实例" title="拥塞控制状态转换实例"></li>
+</ol>
+
     </div>
 
     <div>全文完。</div>
@@ -226,7 +275,7 @@
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#前言"><span class="toc-text">前言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#TCP协议"><span class="toc-text">TCP协议</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-text">简介</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#协议首部"><span class="toc-text">协议首部</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#TCP选项"><span class="toc-text">TCP选项</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP连接"><span class="toc-text">TCP连接</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#连接过程：三次握手"><span class="toc-text">连接过程：三次握手</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#断开过程：四次挥手"><span class="toc-text">断开过程：四次挥手</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP可靠性传输"><span class="toc-text">TCP可靠性传输</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#可靠性保证"><span class="toc-text">可靠性保证</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#最大报文段长度"><span class="toc-text">最大报文段长度</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#超时重传"><span class="toc-text">超时重传</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#拥塞控制"><span class="toc-text">拥塞控制</span></a></li></ol></li></ol></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#前言"><span class="toc-text">前言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#TCP协议"><span class="toc-text">TCP协议</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-text">简介</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#协议首部"><span class="toc-text">协议首部</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#TCP选项"><span class="toc-text">TCP选项</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP连接"><span class="toc-text">TCP连接</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#连接过程：三次握手"><span class="toc-text">连接过程：三次握手</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#断开过程：四次挥手"><span class="toc-text">断开过程：四次挥手</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#TCP可靠性传输"><span class="toc-text">TCP可靠性传输</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#可靠性保证"><span class="toc-text">可靠性保证</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#最大报文段长度"><span class="toc-text">最大报文段长度</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#超时重传"><span class="toc-text">超时重传</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#拥塞控制"><span class="toc-text">拥塞控制</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#滑动窗口"><span class="toc-text">滑动窗口</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#拥塞控制算法"><span class="toc-text">拥塞控制算法</span></a><ol class="toc-child"><li class="toc-item toc-level-5"><a class="toc-link" href="#慢启动"><span class="toc-text">慢启动</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#拥塞避免"><span class="toc-text">拥塞避免</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#快速重传"><span class="toc-text">快速重传</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#图示"><span class="toc-text">图示</span></a></li></ol></li></ol></li></ol></li></ol></li></ol>
   </div>
 
 
