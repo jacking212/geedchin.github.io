@@ -11,16 +11,16 @@
   <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
   
   
-    <meta name="keywords" content="" />
+    <meta name="keywords" content="docker,docker基础组件," />
   
 
   
   
-    <meta name="description" content="GeedChin" />
+    <meta name="description" content="docker基础组件之runc" />
   
   
   <link rel="icon" type="image/x-icon" href="/logo.png">
-  <title>category: docker [ GeedChin ]</title>
+  <title>docker基础组件之runc [ GeedChin ]</title>
   
     <!-- stylesheets list from config.yml -->
     
@@ -73,146 +73,117 @@
 
   <div class="container" id="content-outer">
     <div class="inner" id="content-inner">
-      
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        docker基础组件之runc
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2020-04-21T14:35:50.000Z">
+        2020-04-21
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/docker/" rel="tag">docker</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/docker%E5%9F%BA%E7%A1%80%E7%BB%84%E4%BB%B6/" rel="tag">docker基础组件</a></li></ul>
+      </span>
+    </span>
+      <span class="slash">/</span>
+      <span class="read">
+      <span id="busuanzi_value_page_pv"></span> 点击
+    </span>
+      <!--span class="slash">/</span>
+      <span class="read">阅读耗时 </span-->
+    </header>
 
-  
-  
+    <div class="post-content">
+      <h1 id="OCI-标准"><a href="#OCI-标准" class="headerlink" title="OCI 标准"></a>OCI 标准</h1><blockquote>
+<p>OCI(open container initiative)定义了容器运行时标准和容器镜像标准。docker的runC组件便是符合容器运行时标准的一个运行时实现。由于runC不涉及到镜像的管理，此处不对镜像标准做讨论。</p>
+</blockquote>
+<h2 id="容器运行时标准"><a href="#容器运行时标准" class="headerlink" title="容器运行时标准"></a>容器运行时标准</h2><blockquote>
+<p> 运行时标准定义：<code>github.com/opencontainers/runtime-spec</code>。<br>配置的根定义类型是<code>Spec</code>，主要定义了运行时的版本、运行时根目录、HostName、Process(容器启动命令、参数、环境变量等)、Mounts、Hooks、annotations以及不同平台的运行参数等信息。</p>
+</blockquote>
+<h1 id="runC操作示例"><a href="#runC操作示例" class="headerlink" title="runC操作示例"></a>runC操作示例</h1><blockquote>
+<p>本地先创建一个实验目录，我的目录是：<code>/app/tmp/myc</code>。在该目录下创建目录<code>rootfs</code>作为容器运行时的根目录。此时rootfs目录是空的，为了正常运行，使用docker命令导出一个完整的容器目录。执行<code>runc spec</code>命令，生成OCI 标准容器运行时配置文件<code>config.json</code>。</p>
+</blockquote>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mkdir -p /app/tmp/myc/rootfs &amp;&amp; cd /app/tmp/myc</span><br><span class="line">docker export &#123;&#123;容器ID&#125;&#125; | tar xvf - -C rootfs</span><br><span class="line">runc spec</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>可以修改<code>process.args</code>参数来修改容器启动命令,<code>root</code>参数可以指定容器根目录(默认根目录为rootfs)。</p>
+<p>此处需修改 config.json参数<code>process.terminal</code>为false，否则会报错，terminal为true时需启动时配置额外参数：<br><code>[0000] cannot allocate tty if runc will detach without setting console socket 
+cannot allocate tty if runc will detach without setting console socket</code></p>
+<p>此时便可以启动容器了。<code>runc create -b /app/tmp/myc testrunc</code>，<br>可以通过<code>runc list</code>查看容器状态为<code>created</code>，可以使用命令<code>runc start testrunc</code>来真正启动容器(注意，要保证配置文件中 process.args命令可执行，且后台运行，否则执行完就退出)。</p>
+</blockquote>
+<h1 id="容器运行时状态"><a href="#容器运行时状态" class="headerlink" title="容器运行时状态"></a>容器运行时状态</h1><blockquote>
+<p>容器运行时状态转换图：</p>
+<pre class="mermaid">graph TB;
+    creating -->|success| created
+    created -->|start failed| stopped
+    created -->|start success| running
+    running -->|err/exit/crash/kill|stopped
+    running -->|pause|paused
+    paused -->|resume|running</pre>
+</blockquote>
+
+    </div>
+
+    <div>全文完。</div>
+  </article>
+  <div class="toc-container">
     
-    
-    <section class="post page archives">
-      <h3 class="archive-year-wrap">
-        <a href="/archives/2020" class="archive-year">
-          2020
-        </a>
-      </h3>
-      <div class="archives">
-  
-  <div class="archive" >
-  <a class="post-go" href="/blog/2020/04/21/20200421223550.html">
-    <div>
-      <span class="date">
-        04-21
-      </span>
-      <span class="slash">/</span>
-      docker基础组件之runc
-    </div>
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">目录</strong>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#OCI-标准"><span class="toc-text">OCI 标准</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#容器运行时标准"><span class="toc-text">容器运行时标准</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#runC操作示例"><span class="toc-text">runC操作示例</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#容器运行时状态"><span class="toc-text">容器运行时状态</span></a></li></ol>
+  </div>
 
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
 
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+<div class="share" style="width: 100%;">
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;">请我喝咖啡</div>
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;max-width:500px;">
+      <div style="float:left;margin-left:50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">支付宝</div>
+        <image src="/resources/myqr/alipay.jpg"/>
+      </div>
+      <div style="float:left; margin-left: 50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">微信</div>
+        <image src="/resources/myqr/wechatpay.jpg"/>
+      </div>
+      <div style="clear:left;"></div>
+  </div>
 </div>
 
   
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/blog/2020/03/22/20190621005014.html" rel="next" title="docker基础之网络——VLAN">
+          docker基础之网络——VLAN
+          </a>
+        
+      </div>
   
-  <div class="archive" >
-  <a class="post-go" href="/blog/2020/03/22/20190621005014.html">
-    <div>
-      <span class="date">
-        03-22
-      </span>
-      <span class="slash">/</span>
-      docker基础之网络——VLAN
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/blog/2020/05/01/20200501210040.html" rel="prev" title="go-defer">
+            go-defer
+          </a>
+          <span>〉</span>
+        
+      </div>
     </div>
-
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
-
-</div>
-
   
-  
-    
-      </div></section>
-    
-    
-    <section class="post page archives">
-      <h3 class="archive-year-wrap">
-        <a href="/archives/2019" class="archive-year">
-          2019
-        </a>
-      </h3>
-      <div class="archives">
-  
-  <div class="archive" >
-  <a class="post-go" href="/blog/2019/06/21/20190621005014.html">
-    <div>
-      <span class="date">
-        06-21
-      </span>
-      <span class="slash">/</span>
-      docker基础之网络
-    </div>
 
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
-
-</div>
-
-  
-  
-  <div class="archive" >
-  <a class="post-go" href="/blog/2019/06/20/20190620225014.html">
-    <div>
-      <span class="date">
-        06-20
-      </span>
-      <span class="slash">/</span>
-      docker基础之资源隔离
-    </div>
-
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
-
-</div>
-
-  
-  
-  <div class="archive" >
-  <a class="post-go" href="/blog/2019/06/16/20190616225014.html">
-    <div>
-      <span class="date">
-        06-16
-      </span>
-      <span class="slash">/</span>
-      docker基础之镜像存储
-    </div>
-
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
-
-</div>
-
-  
-  
-  <div class="archive" >
-  <a class="post-go" href="/blog/2019/04/01/20190401023114.html">
-    <div>
-      <span class="date">
-        04-01
-      </span>
-      <span class="slash">/</span>
-      Dockerfile
-    </div>
-
-    <!--<div class="excerpt">-->
-      <!---->
-    <!--</div>-->
-  </a>
-
-</div>
-
-
-  </div></section>
 
     </div>
 
