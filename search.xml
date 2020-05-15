@@ -144,7 +144,7 @@
 <h2 id="不同版本中defer的实现"><a href="#不同版本中defer的实现" class="headerlink" title="不同版本中defer的实现"></a>不同版本中defer的实现</h2><blockquote>
 <ol>
 <li>在1.12版本中，defer的实现主要是通过 runtime.deferproc 函数，创建defer并存入g的defer栈中，在执行完函数后，会循环调用 runtime.deferreturn函数来执行defer函数</li>
-<li>在1.13版本中，defer的实现是通过执行 runtime.deferprocstack 函数，参数直接为_defer类型，编译时已经确定类型无需额外创建(大概这块少了newproc函数调用提升了1.12中defer效率？)。</li>
+<li>在1.13版本中，defer的实现是通过执行 runtime.deferprocstack 函数，从栈上创建defer函数，相比于原来在堆上创建，速度提升了很多。</li>
 <li>在1.14版本中，defer的实现主要是编译阶段生成的<code>jmp</code>指令，通过指令跳转，减少函数调用时间，大幅度提升了defer的执行效率。(当函数中defer数量超过8个时，效率会骤减，但效率仍比1.12中高30%左右，超过8个使用1.13中的方法执行defer)。为什么是8个：有一个8位的deferBits，每增加一个defer,deferBits的一个bit被设置为1，编译过程分析到deferBits不够用的时候，会切换defer实现方式，当使用for循环defer时，会采用1.12版本的方法将defer入栈，for外的使用1.13版本方法入栈。具体可以写示例代码，编译汇编代码查看</li>
 <li>panic场景，编译器会在可能发生panic的地方加入汇编，判断panic条件</li>
 </ol>
