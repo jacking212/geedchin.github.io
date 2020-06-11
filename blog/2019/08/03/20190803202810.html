@@ -135,7 +135,89 @@ id2-->|否|抢占
 <p>主流程如上，先调度，再判断是否需要抢占，必要时进入抢占，调度成功则执行后续的收尾工作。再看一下调度方法(<code>sched.config.Algorithm.Schedule</code>)：</p>
 <figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *genericScheduler)</span> <span class="title">Schedule</span><span class="params">(pod *v1.Pod, nodeLister algorithm.NodeLister)</span> <span class="params">(result ScheduleResult, err error)</span></span> &#123;</span><br><span class="line">	trace := utiltrace.New(fmt.Sprintf(<span class="string">"Scheduling %s/%s"</span>, pod.Namespace, pod.Name))</span><br><span class="line">	<span class="keyword">defer</span> trace.LogIfLong(<span class="number">100</span> * time.Millisecond)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := podPassesBasicChecks(pod, g.pvcLister); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	nodes, err := nodeLister.List()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(nodes) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, ErrNoNodesAvailable</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := g.snapshot(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	trace.Step(<span class="string">"Computing predicates"</span>)</span><br><span class="line">	startPredicateEvalTime := time.Now()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 核心代码，预选过程，找到可运行pod的nodes</span></span><br><span class="line">	filteredNodes, failedPredicateMap, err := g.findNodesThatFit(pod, nodes)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 没找到，直接return</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(filteredNodes) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, &amp;FitError&#123;</span><br><span class="line">			Pod:              pod,</span><br><span class="line">			NumAllNodes:      <span class="built_in">len</span>(nodes),</span><br><span class="line">			FailedPredicates: failedPredicateMap,</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	trace.Step(<span class="string">"Prioritizing"</span>)</span><br><span class="line">	startPriorityEvalTime := time.Now()</span><br><span class="line">	<span class="comment">// When only one node after predicate, just use it.</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(filteredNodes) == <span class="number">1</span> &#123;</span><br><span class="line">		</span><br><span class="line">		<span class="keyword">return</span> ScheduleResult&#123;</span><br><span class="line">			SuggestedHost:  filteredNodes[<span class="number">0</span>].Name,</span><br><span class="line">			EvaluatedNodes: <span class="number">1</span> + <span class="built_in">len</span>(failedPredicateMap),</span><br><span class="line">			FeasibleNodes:  <span class="number">1</span>,</span><br><span class="line">		&#125;, <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	metaPrioritiesInterface := g.priorityMetaProducer(pod, g.nodeInfoSnapshot.NodeInfoMap)</span><br><span class="line">	<span class="comment">// 核心代码，优选过程，计算每个node的优先级得分</span></span><br><span class="line">	priorityList, err := PrioritizeNodes(pod, g.nodeInfoSnapshot.NodeInfoMap, metaPrioritiesInterface, g.prioritizers, filteredNodes, g.extenders)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	trace.Step(<span class="string">"Selecting host"</span>)</span><br><span class="line">	<span class="comment">// 找到优先级得分最大的node</span></span><br><span class="line">	host, err := g.selectHost(priorityList)</span><br><span class="line">	<span class="keyword">return</span> ScheduleResult&#123;</span><br><span class="line">		SuggestedHost:  host,</span><br><span class="line">		EvaluatedNodes: <span class="built_in">len</span>(filteredNodes) + <span class="built_in">len</span>(failedPredicateMap),</span><br><span class="line">		FeasibleNodes:  <span class="built_in">len</span>(filteredNodes),</span><br><span class="line">	&#125;, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-
+<h1 id="补充"><a href="#补充" class="headerlink" title="补充"></a>补充</h1><blockquote>
+<ol>
+<li>pod新特性： spec.topologySpreadConstraint</li>
+<li>svc新特性： spec.topologyKeys</li>
+</ol>
+</blockquote>
+<h2 id="调度流程"><a href="#调度流程" class="headerlink" title="调度流程"></a>调度流程</h2><h3 id="node取样与整体流程"><a href="#node取样与整体流程" class="headerlink" title="node取样与整体流程"></a>node取样与整体流程</h3><blockquote>
+<ol>
+<li>每个调度循环里，都会调用<code>snapshot()</code>方法来获取node快照，底层通过nodeTree结构实现对node进行分区，每次从中取node时轮流从分区中取数据，以此保证node节点足够分散。</li>
+<li>在node节点足够分散的情况下，通过设置node取样规模，经过一层filter，取出指定可行数量的node(g.numFeasibleNodesToFind),小于100时直接返回所有，大于100而且取样比例小于100%时才会执行。取样比例在 kubeSchedulerConfiguration里配置</li>
+<li>调用<code>findNodesThatPassFilters</code>方法，查找满足调度要求的节点。</li>
+<li>调用<code>findNodesThatPassExtenders</code>执行用户自定义的调度程序。</li>
+<li>计算得分</li>
+<li>selectHost</li>
+<li>assume -&gt; 本地pod标记nodeName，node的pod列表把当前pod加进去，node移至nodeCache头，下次循环取snapshot时更新用。</li>
+<li>prebind extension point</li>
+<li>bind-&gt;extendersBinding-&gt;bindPlugin</li>
+<li>如果上一步失败：defer里执行finishBinding会从node.PodList删除当前pod，取消其assume状态。然后recordSchedulingFailure-&gt; sched.Error() -&gt; MakeDefaultErrorFunc()() 把pod放到 sched.SchedulingQueue.unschedulableQ (定时任务处理数据:sched.Run()中sched.SchedulingQueue.Run())最后流转到activeQ重新调度</li>
+<li>postBindPlugin</li>
+</ol>
+</blockquote>
+<h3 id="调度框架"><a href="#调度框架" class="headerlink" title="调度框架"></a>调度框架</h3><blockquote>
+<ol>
+<li>QueueSort： 支持自定义排序</li>
+<li>PreFilter： 对Pod请求预处理</li>
+<li>Filter： Filter逻辑</li>
+<li>ExtenderFilter: 外部扩展filter</li>
+<li>PostFilter： logs、metrics等</li>
+<li>PreScore： score前预处理</li>
+<li>Score： 打分</li>
+<li>ExtenderScore： 外部扩展打分</li>
+<li>Reserve： 有状态plugin可对资源记账</li>
+<li>PreBind：</li>
+<li>Bind:  (可执行extenderBind)</li>
+<li>Unreserve： 恢复操作，失败时取消记账内容 </li>
+<li>PostBind</li>
+</ol>
+</blockquote>
+<h2 id="预选：Predicates（1-18版本中更改为filter，-pkg-shceduler-framework-plugins）"><a href="#预选：Predicates（1-18版本中更改为filter，-pkg-shceduler-framework-plugins）" class="headerlink" title="预选：Predicates（1.18版本中更改为filter， pkg/shceduler/framework/plugins）"></a>预选：Predicates（1.18版本中更改为filter， pkg/shceduler/framework/plugins）</h2><h3 id="存储相关"><a href="#存储相关" class="headerlink" title="存储相关"></a>存储相关</h3><blockquote>
+<ol>
+<li>nodeVolumeLimits</li>
+<li>volumeZone</li>
+<li>volumeRestrictions</li>
+</ol>
+</blockquote>
+<h3 id="节点相关"><a href="#节点相关" class="headerlink" title="节点相关"></a>节点相关</h3><blockquote>
+<ol>
+<li>nodeAffinity</li>
+<li>nodeLabel</li>
+<li>nodePorts</li>
+<li>nodePreferAvoidPods</li>
+<li>nodeResource</li>
+<li>nodeUnschedulable</li>
+<li>taintToleration</li>
+</ol>
+</blockquote>
+<h3 id="Pod间关系"><a href="#Pod间关系" class="headerlink" title="Pod间关系"></a>Pod间关系</h3><blockquote>
+<ol>
+<li>podTopologySpread</li>
+<li>interPodAffinity</li>
+</ol>
+</blockquote>
+<h2 id="打分：Priorities-1-18版本中更改为score，-pkg-shceduler-framework-plugins"><a href="#打分：Priorities-1-18版本中更改为score，-pkg-shceduler-framework-plugins" class="headerlink" title="打分：Priorities(1.18版本中更改为score， pkg/shceduler/framework/plugins)"></a>打分：Priorities(1.18版本中更改为score， pkg/shceduler/framework/plugins)</h2><blockquote>
+<p>解决问题： 碎片、容灾、水位、亲和性</p>
+</blockquote>
+<h3 id="node水位"><a href="#node水位" class="headerlink" title="node水位"></a>node水位</h3><ol>
+<li>优先打散： LeastAllocated</li>
+<li>优先堆叠： MostAllocated</li>
+<li>碎片率： BalancedAllocation</li>
+<li>自定义比率： RequestedToCapacityRatio</li>
+</ol>
+<h3 id="pod间关系-topo-service-controller"><a href="#pod间关系-topo-service-controller" class="headerlink" title="pod间关系(topo,service,controller)"></a>pod间关系(topo,service,controller)</h3><ol>
+<li>Pod间topo： PodTopologySpread</li>
+<li>serivce: ServiceAffinity<h3 id="node亲和性"><a href="#node亲和性" class="headerlink" title="node亲和性"></a>node亲和性</h3></li>
+<li>nodeAffinity</li>
+<li>nodeLabel</li>
+<li>nodePreferAvoidPods</li>
+<li>ImageLocality</li>
+<li>taintToleration</li>
+<li>resourceLimits<h3 id="pod亲和性"><a href="#pod亲和性" class="headerlink" title="pod亲和性"></a>pod亲和性</h3></li>
+<li>DefaultPodTopologySpread</li>
+<li>interPodAffinity</li>
+</ol>
 <h1 id="最后"><a href="#最后" class="headerlink" title="最后"></a>最后</h1><p>本文仅讲解了调度器启动前的初始化过程以及调度整体流程，细节实现还需读者自行了解。</p>
 
     </div>
@@ -146,7 +228,7 @@ id2-->|否|抢占
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#调度器概述"><span class="toc-text">调度器概述</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#源码阅读"><span class="toc-text">源码阅读</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#启动前初始化过程"><span class="toc-text">启动前初始化过程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#启动过程"><span class="toc-text">启动过程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#调度过程"><span class="toc-text">调度过程</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#最后"><span class="toc-text">最后</span></a></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#调度器概述"><span class="toc-text">调度器概述</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#源码阅读"><span class="toc-text">源码阅读</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#启动前初始化过程"><span class="toc-text">启动前初始化过程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#启动过程"><span class="toc-text">启动过程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#调度过程"><span class="toc-text">调度过程</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#补充"><span class="toc-text">补充</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#调度流程"><span class="toc-text">调度流程</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#node取样与整体流程"><span class="toc-text">node取样与整体流程</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#调度框架"><span class="toc-text">调度框架</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#预选：Predicates（1-18版本中更改为filter，-pkg-shceduler-framework-plugins）"><span class="toc-text">预选：Predicates（1.18版本中更改为filter， pkg/shceduler/framework/plugins）</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#存储相关"><span class="toc-text">存储相关</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#节点相关"><span class="toc-text">节点相关</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Pod间关系"><span class="toc-text">Pod间关系</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#打分：Priorities-1-18版本中更改为score，-pkg-shceduler-framework-plugins"><span class="toc-text">打分：Priorities(1.18版本中更改为score， pkg/shceduler/framework/plugins)</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#node水位"><span class="toc-text">node水位</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#pod间关系-topo-service-controller"><span class="toc-text">pod间关系(topo,service,controller)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#node亲和性"><span class="toc-text">node亲和性</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#pod亲和性"><span class="toc-text">pod亲和性</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#最后"><span class="toc-text">最后</span></a></li></ol>
   </div>
 
 

@@ -1,6 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>k8s特性02 —— 自定义调度器</title>
+    <url>/blog/2020/06/09/20200609202310.html</url>
+    <content><![CDATA[<blockquote>
+<p>本文基于k8s 1.18.2</p>
+</blockquote>
+<h1 id="自定义调度的方法"><a href="#自定义调度的方法" class="headerlink" title="自定义调度的方法"></a>自定义调度的方法</h1><blockquote>
+<p>k8s中自定义调度一共有三种方法：</p>
+<ol>
+<li>直接修改源码，重新编译。</li>
+<li>k8s自身实现了很多种调度算法，自定义如何使用这些算法</li>
+<li>实现自己的调度算法，在调度过程中，调度器调接口执行自定义调度</li>
+</ol>
+<p>第一种方法对源码侵入性比较大，正常情况下不适用。第二种方法在官方实现的调度算法中，通过组合方式能够实现自己调度需求的则可用，否则不可用。第三种使用场景更加广泛，可执行用户自己实现的调度策略。</p>
+</blockquote>
+<h1 id="自定义调度"><a href="#自定义调度" class="headerlink" title="自定义调度"></a>自定义调度</h1><h2 id="修改源码-定义调度算法："><a href="#修改源码-定义调度算法：" class="headerlink" title="修改源码+定义调度算法："></a>修改源码+定义调度算法：</h2><p>最小入侵方案：</p>
+<p>方案1：</p>
+<ol>
+<li><p>在 pkg/scheduler 包下建立自己的代码包，实验代码结构如下：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">--outoft</span><br><span class="line">  |-- outoft.go</span><br><span class="line">  |-- plugins</span><br><span class="line">      |-- fakeplugin</span><br><span class="line">          |-- fakeplugin.go</span><br></pre></td></tr></table></figure>
+<p>其中，plugins包为扩展调度包，其中包含用户自己调度逻辑。如果需要实现什么，在里边实现即可。此处给出fakePlugin代码：</p>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> fakeplugin</span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">"context"</span></span><br><span class="line">	<span class="string">"k8s.io/api/core/v1"</span></span><br><span class="line">	<span class="string">"k8s.io/apimachinery/pkg/runtime"</span></span><br><span class="line">	framework <span class="string">"k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	Name = <span class="string">"FakePlugin"</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">type</span> FakePlugin <span class="keyword">struct</span> &#123;</span><br><span class="line">	handle framework.FrameworkHandle</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f FakePlugin)</span> <span class="title">Filter</span><span class="params">(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo)</span> *<span class="title">framework</span>.<span class="title">Status</span></span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f FakePlugin)</span> <span class="title">Name</span><span class="params">()</span> <span class="title">string</span></span> &#123;</span><br><span class="line">	<span class="keyword">return</span> Name</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(_ runtime.Object, handle framework.FrameworkHandle)</span> <span class="params">(framework.Plugin, error)</span></span> &#123;</span><br><span class="line">	<span class="keyword">return</span> &amp;FakePlugin&#123;</span><br><span class="line">		handle: handle,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意1：plugin需要实现<code>pkg/scheduler/framework/v1alpha1/Plugin</code>接口，用于注册该plugin。另外，如果需要在某个调度点实现自定义功能，实现指定的方法即可：此处实现了<code>pkg/scheduler/framework/v1alpha1/FilterPlugin</code>接口，可通过配置，在调度filter阶段执行完默认调度策略后来调用该方法。</p>
+</li>
+<li><p>注册plugin的方法<br>此处给出 outoft.go文件代码，重点在 Register方法，该方法将用户自定义plugin注册到registry里。</p>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> outoft</span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	framework <span class="string">"k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"</span></span><br><span class="line">	<span class="string">"k8s.io/kubernetes/pkg/scheduler/outoft/plugins/fakeplugin"</span></span><br><span class="line">)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Register</span><span class="params">(registry framework.Registry)</span> <span class="title">error</span></span> &#123;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> name, factory := <span class="keyword">range</span> reg &#123;</span><br><span class="line">		registry.Register(name, factory)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">var</span> reg = framework.Registry&#123;</span><br><span class="line">	fakeplugin.Name: fakeplugin.New,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li><p>配置调用注册plugin<br>修改scheduler的启动main函数。</p>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"><span class="comment">// ...</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    command := app.NewSchedulerCommand()</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>修改为</p>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"><span class="comment">// ...</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    command := app.NewSchedulerCommand(outoft.Register)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如此，在创建调度器的过程中，会调用到注册plugin的方法，从而将用户自定义的调度plugin注册。<br>调用链：command.Run() -&gt; runCommand() -&gt; Steup() -&gt; option(outOfTreeRegistry)注册成功 -&gt; scheduler.New() -&gt; registry.Merge() 将outOfTree plugin合并到registry。</p>
+</li>
+<li><p>配置调度器文件<br>只注册了调度器是不会被调用的，需要用户自定义调度策略。配置调度器的config.yaml文件（启动调度器时需指定 –config为此文件），其中<code>profiles</code>里配置了自定义的调度策略，default-scheduler是默认，my-scheduler为自定义的调度策略。修改完配置文件启动，修改测试deployment.spec.template.spec.schedulerName值为my-scheduler，新建的pod调度过程即可调用到用户自定义的调度器。</p>
+<figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">kubescheduler.config.k8s.io/v1beta1</span></span><br><span class="line"><span class="attr">clientConnection:</span></span><br><span class="line">  <span class="attr">acceptContentTypes:</span> <span class="string">""</span></span><br><span class="line">  <span class="attr">burst:</span> <span class="number">100</span></span><br><span class="line">  <span class="attr">contentType:</span> <span class="string">application/vnd.kubernetes.protobuf</span></span><br><span class="line">  <span class="attr">kubeconfig:</span> <span class="string">/etc/kubernetes/scheduler.conf</span></span><br><span class="line">  <span class="attr">qps:</span> <span class="number">50</span></span><br><span class="line"><span class="attr">disablePreemption:</span> <span class="literal">false</span></span><br><span class="line"><span class="attr">enableContentionProfiling:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">enableProfiling:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">healthzBindAddress:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span><span class="string">:10251</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">KubeSchedulerConfiguration</span></span><br><span class="line"><span class="attr">leaderElection:</span></span><br><span class="line">  <span class="attr">leaderElect:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">leaseDuration:</span> <span class="string">15s</span></span><br><span class="line">  <span class="attr">renewDeadline:</span> <span class="string">10s</span></span><br><span class="line">  <span class="attr">resourceLock:</span> <span class="string">endpointsleases</span></span><br><span class="line">  <span class="attr">resourceName:</span> <span class="string">kube-scheduler</span></span><br><span class="line">  <span class="attr">resourceNamespace:</span> <span class="string">kube-system</span></span><br><span class="line">  <span class="attr">retryPeriod:</span> <span class="string">2s</span></span><br><span class="line"><span class="attr">metricsBindAddress:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span><span class="string">:10251</span></span><br><span class="line"><span class="attr">percentageOfNodesToScore:</span> <span class="number">0</span></span><br><span class="line"><span class="attr">podInitialBackoffSeconds:</span> <span class="number">1</span></span><br><span class="line"><span class="attr">podMaxBackoffSeconds:</span> <span class="number">10</span></span><br><span class="line"><span class="attr">profiles:</span></span><br><span class="line"><span class="bullet">-</span> <span class="attr">pluginConfig:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">args:</span></span><br><span class="line">      <span class="attr">apiVersion:</span> <span class="string">kubescheduler.config.k8s.io/v1beta1</span></span><br><span class="line">      <span class="attr">hardPodAffinityWeight:</span> <span class="number">1</span></span><br><span class="line">      <span class="attr">kind:</span>  </span><br><span class="line">    <span class="attr">name:</span> <span class="string">InterPodAffinity</span></span><br><span class="line">  <span class="attr">schedulerName:</span> <span class="string">default-scheduler</span></span><br><span class="line"><span class="bullet">-</span> <span class="attr">schedulerName:</span> <span class="string">my-scheduler</span></span><br><span class="line">  <span class="attr">plugins:</span></span><br><span class="line">    <span class="attr">filter:</span> </span><br><span class="line">      <span class="attr">enabled:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">FakePlugin</span></span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<p>方案2：</p>
+<p>新建自己的项目，将kubernetes包放到vender下，或者用go mod导入，用户自定义的plugin、plugin注册代码同上，只需将kube-scheduler的启动包下的文件copy到当前用户自定义项目中，修改该启动方法，增加plugin注册参数，编译运行即可。（启动scheduler时，需指定 –config文件为上边的config.yaml文件）</p>
+<blockquote>
+</blockquote>
+<h1 id="实现第三方调度并接入k8s"><a href="#实现第三方调度并接入k8s" class="headerlink" title="实现第三方调度并接入k8s"></a>实现第三方调度并接入k8s</h1><p>用户可建立独立项目，通过http方式接入第三方调度方法（目前仅支持http，pkg/scheduler/framework/v1alpha1/Extender接口，目前仅有http实现，后续可能增加实现方法）</p>
+<p>用户可实现的调度接入点：Filter、Prioritize、Bind、preempt，实现相应调度点自定义调度需要</p>
+<ol>
+<li>用户提供http请求服务，处理调度请求</li>
+<li>配置config.yaml配置文件</li>
+</ol>
+<p>扩展对所有调度策略生效，如果用户在某些场景下不需要执行调度，需要用户在代码逻辑中自行判断</p>
+<figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="comment"># 配置文件内容大体同上边的 config.yaml，在上边文件最后追加内容：</span></span><br><span class="line"><span class="attr">extenders:</span></span><br><span class="line"><span class="bullet">-</span> <span class="attr">urlPrefix:</span> <span class="string">http://10.1.1.1:8080/prefix</span></span><br><span class="line">  <span class="attr">filterVerb:</span> <span class="string">filter</span></span><br><span class="line">  <span class="attr">prioritizeVerb:</span> <span class="string">prioritize</span></span><br><span class="line">  <span class="attr">weight:</span> <span class="number">1</span></span><br></pre></td></tr></table></figure>
+<p>注意1：请求时，会将urlPrefix与 xxxVerb 拼在一起作为请求路径，另外，如果自定义逻辑里对node信息有做缓存，那么可以通过配置请求时只传nodeName，以减少数据传输</p>
+<p>自定义调度策略服务需要接收 <code>/prefix/filter</code>和<code>/prefix/prioritize</code>的请求，并对body解析，执行相应调度策略，然后返回。API格式,可参照源码中test示例(test/integration/scheduler/extender_test.go Extender的方法:Filter\Prioritize\Bind)：</p>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line">Filter(arg *v1.ExtenderArgs) (*v1.ExtenderFilterResult, error)</span><br><span class="line">Prioritize(arg *v1.ExtenderArgs) (*v1.HostPriorityList, error)</span><br></pre></td></tr></table></figure>]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s特性</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s特性</tag>
+        <tag>自定义调度器</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>go协程1.14——抢占调度</title>
     <url>/blog/2020/05/12/20200512224315.html</url>
     <content><![CDATA[<h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><blockquote>
@@ -684,7 +746,6 @@ cannot allocate tty if runc will detach without setting console socket</code></p
       <categories>
         <category>k8s</category>
         <category>k8s特性</category>
-        <category>admission webhook</category>
       </categories>
       <tags>
         <tag>k8s</tag>
@@ -758,7 +819,89 @@ id2-->|否|抢占
 <p>主流程如上，先调度，再判断是否需要抢占，必要时进入抢占，调度成功则执行后续的收尾工作。再看一下调度方法(<code>sched.config.Algorithm.Schedule</code>)：</p>
 <figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *genericScheduler)</span> <span class="title">Schedule</span><span class="params">(pod *v1.Pod, nodeLister algorithm.NodeLister)</span> <span class="params">(result ScheduleResult, err error)</span></span> &#123;</span><br><span class="line">	trace := utiltrace.New(fmt.Sprintf(<span class="string">"Scheduling %s/%s"</span>, pod.Namespace, pod.Name))</span><br><span class="line">	<span class="keyword">defer</span> trace.LogIfLong(<span class="number">100</span> * time.Millisecond)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := podPassesBasicChecks(pod, g.pvcLister); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	nodes, err := nodeLister.List()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(nodes) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, ErrNoNodesAvailable</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := g.snapshot(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	trace.Step(<span class="string">"Computing predicates"</span>)</span><br><span class="line">	startPredicateEvalTime := time.Now()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 核心代码，预选过程，找到可运行pod的nodes</span></span><br><span class="line">	filteredNodes, failedPredicateMap, err := g.findNodesThatFit(pod, nodes)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 没找到，直接return</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(filteredNodes) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, &amp;FitError&#123;</span><br><span class="line">			Pod:              pod,</span><br><span class="line">			NumAllNodes:      <span class="built_in">len</span>(nodes),</span><br><span class="line">			FailedPredicates: failedPredicateMap,</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	trace.Step(<span class="string">"Prioritizing"</span>)</span><br><span class="line">	startPriorityEvalTime := time.Now()</span><br><span class="line">	<span class="comment">// When only one node after predicate, just use it.</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(filteredNodes) == <span class="number">1</span> &#123;</span><br><span class="line">		</span><br><span class="line">		<span class="keyword">return</span> ScheduleResult&#123;</span><br><span class="line">			SuggestedHost:  filteredNodes[<span class="number">0</span>].Name,</span><br><span class="line">			EvaluatedNodes: <span class="number">1</span> + <span class="built_in">len</span>(failedPredicateMap),</span><br><span class="line">			FeasibleNodes:  <span class="number">1</span>,</span><br><span class="line">		&#125;, <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	metaPrioritiesInterface := g.priorityMetaProducer(pod, g.nodeInfoSnapshot.NodeInfoMap)</span><br><span class="line">	<span class="comment">// 核心代码，优选过程，计算每个node的优先级得分</span></span><br><span class="line">	priorityList, err := PrioritizeNodes(pod, g.nodeInfoSnapshot.NodeInfoMap, metaPrioritiesInterface, g.prioritizers, filteredNodes, g.extenders)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> result, err</span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	trace.Step(<span class="string">"Selecting host"</span>)</span><br><span class="line">	<span class="comment">// 找到优先级得分最大的node</span></span><br><span class="line">	host, err := g.selectHost(priorityList)</span><br><span class="line">	<span class="keyword">return</span> ScheduleResult&#123;</span><br><span class="line">		SuggestedHost:  host,</span><br><span class="line">		EvaluatedNodes: <span class="built_in">len</span>(filteredNodes) + <span class="built_in">len</span>(failedPredicateMap),</span><br><span class="line">		FeasibleNodes:  <span class="built_in">len</span>(filteredNodes),</span><br><span class="line">	&#125;, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-
+<h1 id="补充"><a href="#补充" class="headerlink" title="补充"></a>补充</h1><blockquote>
+<ol>
+<li>pod新特性： spec.topologySpreadConstraint</li>
+<li>svc新特性： spec.topologyKeys</li>
+</ol>
+</blockquote>
+<h2 id="调度流程"><a href="#调度流程" class="headerlink" title="调度流程"></a>调度流程</h2><h3 id="node取样与整体流程"><a href="#node取样与整体流程" class="headerlink" title="node取样与整体流程"></a>node取样与整体流程</h3><blockquote>
+<ol>
+<li>每个调度循环里，都会调用<code>snapshot()</code>方法来获取node快照，底层通过nodeTree结构实现对node进行分区，每次从中取node时轮流从分区中取数据，以此保证node节点足够分散。</li>
+<li>在node节点足够分散的情况下，通过设置node取样规模，经过一层filter，取出指定可行数量的node(g.numFeasibleNodesToFind),小于100时直接返回所有，大于100而且取样比例小于100%时才会执行。取样比例在 kubeSchedulerConfiguration里配置</li>
+<li>调用<code>findNodesThatPassFilters</code>方法，查找满足调度要求的节点。</li>
+<li>调用<code>findNodesThatPassExtenders</code>执行用户自定义的调度程序。</li>
+<li>计算得分</li>
+<li>selectHost</li>
+<li>assume -&gt; 本地pod标记nodeName，node的pod列表把当前pod加进去，node移至nodeCache头，下次循环取snapshot时更新用。</li>
+<li>prebind extension point</li>
+<li>bind-&gt;extendersBinding-&gt;bindPlugin</li>
+<li>如果上一步失败：defer里执行finishBinding会从node.PodList删除当前pod，取消其assume状态。然后recordSchedulingFailure-&gt; sched.Error() -&gt; MakeDefaultErrorFunc()() 把pod放到 sched.SchedulingQueue.unschedulableQ (定时任务处理数据:sched.Run()中sched.SchedulingQueue.Run())最后流转到activeQ重新调度</li>
+<li>postBindPlugin</li>
+</ol>
+</blockquote>
+<h3 id="调度框架"><a href="#调度框架" class="headerlink" title="调度框架"></a>调度框架</h3><blockquote>
+<ol>
+<li>QueueSort： 支持自定义排序</li>
+<li>PreFilter： 对Pod请求预处理</li>
+<li>Filter： Filter逻辑</li>
+<li>ExtenderFilter: 外部扩展filter</li>
+<li>PostFilter： logs、metrics等</li>
+<li>PreScore： score前预处理</li>
+<li>Score： 打分</li>
+<li>ExtenderScore： 外部扩展打分</li>
+<li>Reserve： 有状态plugin可对资源记账</li>
+<li>PreBind：</li>
+<li>Bind:  (可执行extenderBind)</li>
+<li>Unreserve： 恢复操作，失败时取消记账内容 </li>
+<li>PostBind</li>
+</ol>
+</blockquote>
+<h2 id="预选：Predicates（1-18版本中更改为filter，-pkg-shceduler-framework-plugins）"><a href="#预选：Predicates（1-18版本中更改为filter，-pkg-shceduler-framework-plugins）" class="headerlink" title="预选：Predicates（1.18版本中更改为filter， pkg/shceduler/framework/plugins）"></a>预选：Predicates（1.18版本中更改为filter， pkg/shceduler/framework/plugins）</h2><h3 id="存储相关"><a href="#存储相关" class="headerlink" title="存储相关"></a>存储相关</h3><blockquote>
+<ol>
+<li>nodeVolumeLimits</li>
+<li>volumeZone</li>
+<li>volumeRestrictions</li>
+</ol>
+</blockquote>
+<h3 id="节点相关"><a href="#节点相关" class="headerlink" title="节点相关"></a>节点相关</h3><blockquote>
+<ol>
+<li>nodeAffinity</li>
+<li>nodeLabel</li>
+<li>nodePorts</li>
+<li>nodePreferAvoidPods</li>
+<li>nodeResource</li>
+<li>nodeUnschedulable</li>
+<li>taintToleration</li>
+</ol>
+</blockquote>
+<h3 id="Pod间关系"><a href="#Pod间关系" class="headerlink" title="Pod间关系"></a>Pod间关系</h3><blockquote>
+<ol>
+<li>podTopologySpread</li>
+<li>interPodAffinity</li>
+</ol>
+</blockquote>
+<h2 id="打分：Priorities-1-18版本中更改为score，-pkg-shceduler-framework-plugins"><a href="#打分：Priorities-1-18版本中更改为score，-pkg-shceduler-framework-plugins" class="headerlink" title="打分：Priorities(1.18版本中更改为score， pkg/shceduler/framework/plugins)"></a>打分：Priorities(1.18版本中更改为score， pkg/shceduler/framework/plugins)</h2><blockquote>
+<p>解决问题： 碎片、容灾、水位、亲和性</p>
+</blockquote>
+<h3 id="node水位"><a href="#node水位" class="headerlink" title="node水位"></a>node水位</h3><ol>
+<li>优先打散： LeastAllocated</li>
+<li>优先堆叠： MostAllocated</li>
+<li>碎片率： BalancedAllocation</li>
+<li>自定义比率： RequestedToCapacityRatio</li>
+</ol>
+<h3 id="pod间关系-topo-service-controller"><a href="#pod间关系-topo-service-controller" class="headerlink" title="pod间关系(topo,service,controller)"></a>pod间关系(topo,service,controller)</h3><ol>
+<li>Pod间topo： PodTopologySpread</li>
+<li>serivce: ServiceAffinity<h3 id="node亲和性"><a href="#node亲和性" class="headerlink" title="node亲和性"></a>node亲和性</h3></li>
+<li>nodeAffinity</li>
+<li>nodeLabel</li>
+<li>nodePreferAvoidPods</li>
+<li>ImageLocality</li>
+<li>taintToleration</li>
+<li>resourceLimits<h3 id="pod亲和性"><a href="#pod亲和性" class="headerlink" title="pod亲和性"></a>pod亲和性</h3></li>
+<li>DefaultPodTopologySpread</li>
+<li>interPodAffinity</li>
+</ol>
 <h1 id="最后"><a href="#最后" class="headerlink" title="最后"></a>最后</h1><p>本文仅讲解了调度器启动前的初始化过程以及调度整体流程，细节实现还需读者自行了解。</p>
 ]]></content>
       <categories>
