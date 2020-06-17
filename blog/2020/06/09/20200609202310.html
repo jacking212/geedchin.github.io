@@ -109,10 +109,16 @@
 <ol>
 <li>直接修改源码，重新编译。</li>
 <li>k8s自身实现了很多种调度算法，自定义如何使用这些算法</li>
-<li>实现自己的调度算法，在调度过程中，调度器调接口执行自定义调度</li>
+<li>实现自己的调度算法，在原调度基础上，调度器调接口执行自定义调度</li>
+<li>脱离原调度器，完全自己实现调度</li>
 </ol>
-<p>第一种方法对源码侵入性比较大，正常情况下不适用。第二种方法在官方实现的调度算法中，通过组合方式能够实现自己调度需求的则可用，否则不可用。第三种使用场景更加广泛，可执行用户自己实现的调度策略。</p>
 </blockquote>
+<ol>
+<li>第一种方法对源码侵入性比较大，正常情况下不适用。</li>
+<li>第二种方法在官方实现的调度算法中，通过组合方式能够实现自己调度需求的则可用，否则不可用。</li>
+<li>第三种使用场景更加广泛，可执行用户自己实现的调度策略。</li>
+<li>第四种更自由，但是无法使用官方的调度算法</li>
+</ol>
 <h1 id="自定义调度"><a href="#自定义调度" class="headerlink" title="自定义调度"></a>自定义调度</h1><h2 id="修改源码-定义调度算法："><a href="#修改源码-定义调度算法：" class="headerlink" title="修改源码+定义调度算法："></a>修改源码+定义调度算法：</h2><p>最小入侵方案：</p>
 <p>方案1：</p>
 <ol>
@@ -139,7 +145,7 @@
 <p>新建自己的项目，将kubernetes包放到vender下，或者用go mod导入，用户自定义的plugin、plugin注册代码同上，只需将kube-scheduler的启动包下的文件copy到当前用户自定义项目中，修改该启动方法，增加plugin注册参数，编译运行即可。（启动scheduler时，需指定 –config文件为上边的config.yaml文件）</p>
 <blockquote>
 </blockquote>
-<h1 id="实现第三方调度并接入k8s"><a href="#实现第三方调度并接入k8s" class="headerlink" title="实现第三方调度并接入k8s"></a>实现第三方调度并接入k8s</h1><p>用户可建立独立项目，通过http方式接入第三方调度方法（目前仅支持http，pkg/scheduler/framework/v1alpha1/Extender接口，目前仅有http实现，后续可能增加实现方法）</p>
+<h1 id="在原调度基础上，扩展调度"><a href="#在原调度基础上，扩展调度" class="headerlink" title="在原调度基础上，扩展调度"></a>在原调度基础上，扩展调度</h1><p>用户可建立独立项目，通过http方式接入第三方调度方法（目前仅支持http，pkg/scheduler/framework/v1alpha1/Extender接口，目前仅有http实现，后续可能增加实现方法）</p>
 <p>用户可实现的调度接入点：Filter、Prioritize、Bind、preempt，实现相应调度点自定义调度需要</p>
 <ol>
 <li>用户提供http请求服务，处理调度请求</li>
@@ -150,6 +156,11 @@
 <p>注意1：请求时，会将urlPrefix与 xxxVerb 拼在一起作为请求路径，另外，如果自定义逻辑里对node信息有做缓存，那么可以通过配置请求时只传nodeName，以减少数据传输</p>
 <p>自定义调度策略服务需要接收 <code>/prefix/filter</code>和<code>/prefix/prioritize</code>的请求，并对body解析，执行相应调度策略，然后返回。API格式,可参照源码中test示例(test/integration/scheduler/extender_test.go Extender的方法:Filter\Prioritize\Bind)：</p>
 <figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Filter(arg *v1.ExtenderArgs) (*v1.ExtenderFilterResult, error)</span><br><span class="line">Prioritize(arg *v1.ExtenderArgs) (*v1.HostPriorityList, error)</span><br></pre></td></tr></table></figure>
+<h1 id="脱离k8s原调度器，完全实现自己的调度"><a href="#脱离k8s原调度器，完全实现自己的调度" class="headerlink" title="脱离k8s原调度器，完全实现自己的调度"></a>脱离k8s原调度器，完全实现自己的调度</h1><ol>
+<li>给需要使用这种调度策略的Pod指定一个原调度器中没有的调度策略，这样，原调度器就不会调度这个Pod。</li>
+<li>此时Pod会一直处于Pending状态，用户需实现自己的调度器来ListPod、ListNode，发现未调度的Pod就调度(主要是指定nodeName)。</li>
+</ol>
+
     </div>
 
     <div>全文完。</div>
@@ -158,7 +169,7 @@
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#自定义调度的方法"><span class="toc-text">自定义调度的方法</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#自定义调度"><span class="toc-text">自定义调度</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#修改源码-定义调度算法："><span class="toc-text">修改源码+定义调度算法：</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#实现第三方调度并接入k8s"><span class="toc-text">实现第三方调度并接入k8s</span></a></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#自定义调度的方法"><span class="toc-text">自定义调度的方法</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#自定义调度"><span class="toc-text">自定义调度</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#修改源码-定义调度算法："><span class="toc-text">修改源码+定义调度算法：</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#在原调度基础上，扩展调度"><span class="toc-text">在原调度基础上，扩展调度</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#脱离k8s原调度器，完全实现自己的调度"><span class="toc-text">脱离k8s原调度器，完全实现自己的调度</span></a></li></ol>
   </div>
 
 
@@ -197,6 +208,11 @@
   
       <div class="post-nav-item post-nav-prev">
           
+          <a href="/blog/2020/06/17/20200617221310.html" rel="prev" title="k8s特性03 —— 自定义资源">
+            k8s特性03 —— 自定义资源
+          </a>
+          <span>〉</span>
+        
       </div>
     </div>
   

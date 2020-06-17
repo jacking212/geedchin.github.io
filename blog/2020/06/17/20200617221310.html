@@ -1,0 +1,565 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="k8s,k8s特性,自定义资源," />
+  
+
+  
+  
+    <meta name="description" content="k8s特性03 —— 自定义资源" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>k8s特性03 —— 自定义资源 [ Jacking ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+</head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="http://blog.jacking.me/images/logo.png">
+    <span class="title">Jacking</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">首页</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives/" class="pure-menu-link">归档</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories/" class="pure-menu-link">分类</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags/" class="pure-menu-link">标签</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/search" class="pure-menu-link">搜索</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about/" class="pure-menu-link">关于</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        k8s特性03 —— 自定义资源
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2020-06-17T14:13:10.000Z">
+        2020-06-17
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s/" rel="tag">k8s</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s%E7%89%B9%E6%80%A7/" rel="tag">k8s特性</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/%E8%87%AA%E5%AE%9A%E4%B9%89%E8%B5%84%E6%BA%90/" rel="tag">自定义资源</a></li></ul>
+      </span>
+    </span>
+      <span class="slash">/</span>
+      <span class="read">
+      <span id="busuanzi_value_page_pv"></span> 点击
+    </span>
+      <!--span class="slash">/</span>
+      <span class="read">阅读耗时 </span-->
+    </header>
+
+    <div class="post-content">
+      <h1 id="K8S自定义资源"><a href="#K8S自定义资源" class="headerlink" title="K8S自定义资源"></a>K8S自定义资源</h1><p>K8S 中可以实现自定义资源类型，它是K8S API的一种扩展。K8S中自定义的资源类型可以动态注册和销毁，当用户创建一个自定义资源类型后，用户可以通过使用<code>kubectl</code>命令来创建该类型资源，操作同内置资源对象无异。</p>
+<h2 id="如何判断是否该使用自定义资源"><a href="#如何判断是否该使用自定义资源" class="headerlink" title="如何判断是否该使用自定义资源"></a>如何判断是否该使用自定义资源</h2><table>
+<thead>
+<tr>
+<th align="center">考虑使用自定义资源(API聚合)</th>
+<th align="center">考虑使用单独API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">API是声明式的</td>
+<td align="center">API不适合声明式</td>
+</tr>
+<tr>
+<td align="center">你希望通过<code>kubectl</code>读写新对象</td>
+<td align="center"><code>kubectl</code>命令的支持是非必须的</td>
+</tr>
+<tr>
+<td align="center">你希望通过k8s ui(dashboard等)查看新的资源类型对象</td>
+<td align="center">k8s ui不必支持查看该资源</td>
+</tr>
+<tr>
+<td align="center">你是正在开发新的API</td>
+<td align="center">你已经完成服务开发，并且正常工作</td>
+</tr>
+<tr>
+<td align="center">愿意接受资源rest path限制，例如namespace和api group</td>
+<td align="center">你需要特定的rest path来适配已有的api</td>
+</tr>
+<tr>
+<td align="center">你的资源对象会被限制在集群或者namespace中</td>
+<td align="center">集群或namespace 不适合你的项目，你需要精细控制资源路径</td>
+</tr>
+<tr>
+<td align="center">你希望重用<a href="#common-feature">k8s api feature</a></td>
+<td align="center">你不需要这些feature</td>
+</tr>
+</tbody></table>
+<h1 id="自定义资源扩展方式"><a href="#自定义资源扩展方式" class="headerlink" title="自定义资源扩展方式"></a>自定义资源扩展方式</h1><p>在K8S中扩展自定义资源共有两种实现方式：CRD、 API Aggregate。</p>
+<p>两种实现方式各有特点，K8S提供两种方式来满足不同用户的不同需求，既不影响易用性、也不影响灵活性。</p>
+<h2 id="CRD"><a href="#CRD" class="headerlink" title="CRD"></a>CRD</h2><h3 id="CRD特点"><a href="#CRD特点" class="headerlink" title="CRD特点"></a>CRD特点</h3><blockquote>
+<ol>
+<li>使用简单</li>
+<li>只需实现controller逻辑即可，不必关心资源对象存储、CURD等一系列操作</li>
+<li>crd允许用户创建新的资源类型而无需添加额外的API服务器，使用它无需了解API Aggregate</li>
+</ol>
+</blockquote>
+<p>该CustomResourceDefinition API资源让您可以定义自定义资源。定义CRD对象会使用您指定的名称和架构创建一个新的自定义资源。Kubernetes API服务并处理您的自定义资源的存储。CRD对象的名称必须是有效的 DNS子域名。</p>
+<p>这使您不必编写自己的API服务器来处理自定义资源，但是实现的通用性意味着您的灵活性比 API服务器聚合要小。</p>
+<p>有关如何注册新的自定义资源，使用新资源类型的实例以及使用控制器来处理事件的示例，请参考<a href="https://github.com/kubernetes/sample-controller" target="_blank" rel="noopener">自定义控制器示例</a>。</p>
+<h2 id="API-Aggregate"><a href="#API-Aggregate" class="headerlink" title="API Aggregate"></a>API Aggregate</h2><h3 id="API-Aggregate-1"><a href="#API-Aggregate-1" class="headerlink" title="API Aggregate"></a>API Aggregate</h3><blockquote>
+<ol>
+<li>需要额外编程</li>
+<li>允许用户自定义实现超过API提供的能力：数据如何存储、API版本转换等</li>
+<li>可把k8s apiserver看做代理，最终api的处理逻辑需要用户自己实现，对用户来说，它只是扩展了k8s api </li>
+</ol>
+</blockquote>
+<p>通常，Kubernetes API中的每个资源都需要处理REST请求并管理对象持久存储的代码。Kubernetes API主服务器处理诸如Pod和Services之类的内置资源，还可以通过CRD通用地处理自定义资源。</p>
+<p>在汇聚层，您可以通过编写和部署自己的独立API服务器提供自定义资源的专用实现。主API服务器将请求处理的自定义资源委托给您，使其对所有客户端可用。</p>
+<h1 id="如何选择"><a href="#如何选择" class="headerlink" title="如何选择"></a>如何选择</h1><p>CRD 更易用，AA(API Aggregated)更灵活，根据需求要选用合适的方案。</p>
+<p>通常来说，在以下几种情况下可能CRD是一个好的选择(考虑易用性)：</p>
+<ol>
+<li>你有一些字段</li>
+<li>正在使用公司内部资源，或作为小型开源项目的一部分(非商业产品)</li>
+</ol>
+<h2 id="易用性比较"><a href="#易用性比较" class="headerlink" title="易用性比较"></a>易用性比较</h2><table>
+<thead>
+<tr>
+<th align="center">CRDs</th>
+<th align="center">AA</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">无需设计方案，用户可选择任意开发语言实现CRD controller</td>
+<td align="center">需要在Go编程和构建二进制包和镜像</td>
+</tr>
+<tr>
+<td align="center">没有额外的服务运行，被API server接管</td>
+<td align="center">要创建的附加服务可能会失败。</td>
+</tr>
+<tr>
+<td align="center">一旦创建了CRD，就不提供持续的支持。任何bug修复都将作为常规的Kubernetes Master升级的一部分。</td>
+<td align="center">可能需要定期从上游获取错误修复，并重新构建和更新聚合的API服务器。</td>
+</tr>
+<tr>
+<td align="center">不必管理多版本API。例如，当控制资源的client时，可以用API同步升级</td>
+<td align="center">你需要处理多个版本的API;例如，当开发一个与世界共享的扩展时。</td>
+</tr>
+</tbody></table>
+<h2 id="高级特性和灵活性"><a href="#高级特性和灵活性" class="headerlink" title="高级特性和灵活性"></a>高级特性和灵活性</h2><p>AA 提供更高级的API特性和对其他特性的定制;例如，存储层。</p>
+<table>
+<thead>
+<tr>
+<th align="center">Feature</th>
+<th align="center">描述</th>
+<th align="center">CRDs</th>
+<th align="center">AA</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">Validation</td>
+<td align="center">帮助用户避免错误，允许您独立于客户端发展API。当有许多客户端不能同时更新时，这些特性最有用。</td>
+<td align="center">YES,大多数验证都可以使用OpenAPI v3.0验证在CRD中指定。附加的验证Webhook支持的任何其他验证。</td>
+<td align="center">YES,任意的验证检查</td>
+</tr>
+<tr>
+<td align="center">Defaulting</td>
+<td align="center"></td>
+<td align="center">YES,要么通过OpenAPI v3.0验证默认关键字(1.17中GA)，要么通过一个可变的Webhook(尽管这将在etcd读取旧对象时不运行)</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Multi-versioning</td>
+<td align="center">允许通过两个API版本服务相同的对象。可以帮助简化API更改，比如重命名字段。如果您控制您的客户端版本，则不太重要。</td>
+<td align="center">YES,<a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/" target="_blank" rel="noopener">crd资源版本</a></td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Custom Storage</td>
+<td align="center">如果您需要使用不同的性能模式进行存储(例如，时间序列数据库而不是键值存储)或安全性隔离(例如，敏感信息的加密等)。</td>
+<td align="center">NO</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Custom Business Logic</td>
+<td align="center">在创建、读取、更新或删除对象时执行任意检查或操作</td>
+<td align="center">YES,webhook</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Scale Subresource</td>
+<td align="center">允许像HorizontalPodAutoscaler和PodDisruptionBudget这样的系统与你的新资源交互</td>
+<td align="center"><a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#scale-subresource" target="_blank" rel="noopener">YES</a></td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Status Subresource</td>
+<td align="center">允许细粒度的访问控制，其中用户写入spec部分，控制器写入status部分。允许在自定义资源数据突变时生成递增的对象(需要在资源中单独的规范和状态部分)</td>
+<td align="center"><a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#status-subresource" target="_blank" rel="noopener">YES</a></td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Other Subresources</td>
+<td align="center">添加CRUD以外的操作，如“logs”或“exec”。</td>
+<td align="center">NO</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">strategic-merge-patch</td>
+<td align="center">新的endpoint支持用<code>Content-Type: application/strategic-merge-patch+json</code>的PATCH操作,用于更新可能被本地和服务器修改的对象。有关更多信息，请参见“<a href="https://kubernetes.io/docs/tasks/manage-kubernetes-objects/update-api-object-kubectl-patch/" target="_blank" rel="noopener">使用kubectl补丁更新API对象</a>”</td>
+<td align="center">NO</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">Protocol Buffers</td>
+<td align="center">新的资源支持希望使用Protocol Buffers的客户端</td>
+<td align="center">NO</td>
+<td align="center">YES</td>
+</tr>
+<tr>
+<td align="center">OpenAPI Schema</td>
+<td align="center">是否有一个OpenAPI (swagger)模式可以从服务器动态获取类型?通过确保只设置允许的字段，用户可以避免字段名称拼写错误吗?是否强制执行类型(换句话说，不在string类型字段中放入int类型?)</td>
+<td align="center">YES,基于OpenAPI v3.0验证模式(1.16中GA)</td>
+<td align="center">YES</td>
+</tr>
+</tbody></table>
+<h2 id="通用Feature"><a href="#通用Feature" class="headerlink" title="通用Feature"></a><a name="common-feature">通用Feature</a></h2><br/>
+
+<table>
+<thead>
+<tr>
+<th align="center">Feature</th>
+<th align="center">考虑使用单独API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">CRUD</td>
+<td align="center">支持通过http、kubectl对资源的curd基本操作</td>
+</tr>
+<tr>
+<td align="center">Watch</td>
+<td align="center">支持通过http的watch操作</td>
+</tr>
+<tr>
+<td align="center">Discovery</td>
+<td align="center">像kubectl和dashboard这样的客户端自动提供对资源的列表、显示和字段编辑操作</td>
+</tr>
+<tr>
+<td align="center">json-patch</td>
+<td align="center">支持<code>Content-Type: application/json-patch+json</code>的PATCH操作</td>
+</tr>
+<tr>
+<td align="center">merge-patch</td>
+<td align="center">支持<code>Content-Type: application/merge-patch+json</code>的PATCH操作</td>
+</tr>
+<tr>
+<td align="center">HTTPS</td>
+<td align="center">使用https</td>
+</tr>
+<tr>
+<td align="center">Built-in Authentication</td>
+<td align="center">对扩展的访问使用核心API服务器(聚合层)进行身份验证</td>
+</tr>
+<tr>
+<td align="center">Built-in Authorization</td>
+<td align="center">对扩展的访问可以重用核心API服务器使用的授权;例如,RBAC。</td>
+</tr>
+<tr>
+<td align="center">Finalizers</td>
+<td align="center">阻塞扩展资源的删除操作，直到外部的cleanup操作发生</td>
+</tr>
+<tr>
+<td align="center">Admission Webhooks</td>
+<td align="center">在create/update/delete操作时对资源设置默认值和校验</td>
+</tr>
+<tr>
+<td align="center">UI/CLI Display</td>
+<td align="center"><code>kubectl</code> <code>dashboard</code>可以展示这些资源</td>
+</tr>
+<tr>
+<td align="center">Unset versus Empty</td>
+<td align="center">客户端可以区分未设置的字段和零值的字段。</td>
+</tr>
+<tr>
+<td align="center">Client Libraries Generation</td>
+<td align="center">Kubernetes提供了通用的client库，以及用于生成特定类型的client库的工具</td>
+</tr>
+<tr>
+<td align="center">Labels and annotations</td>
+<td align="center">跨对象的通用元数据，工具知道如何为核心和自定义资源编辑这些元数据</td>
+</tr>
+</tbody></table>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#preparing-to-install-a-custom-resource" target="_blank" rel="noopener">其他注意事项</a></p>
+<h1 id="结尾"><a href="#结尾" class="headerlink" title="结尾"></a>结尾</h1><p>本文翻译自<a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources" target="_blank" rel="noopener">k8s官方文档</a></p>
+
+    </div>
+
+    <div>全文完。</div>
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">目录</strong>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#K8S自定义资源"><span class="toc-text">K8S自定义资源</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#如何判断是否该使用自定义资源"><span class="toc-text">如何判断是否该使用自定义资源</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#自定义资源扩展方式"><span class="toc-text">自定义资源扩展方式</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#CRD"><span class="toc-text">CRD</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#CRD特点"><span class="toc-text">CRD特点</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#API-Aggregate"><span class="toc-text">API Aggregate</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#API-Aggregate-1"><span class="toc-text">API Aggregate</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#如何选择"><span class="toc-text">如何选择</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#易用性比较"><span class="toc-text">易用性比较</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#高级特性和灵活性"><span class="toc-text">高级特性和灵活性</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#通用Feature"><span class="toc-text">通用Feature</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#结尾"><span class="toc-text">结尾</span></a></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+<div class="share" style="width: 100%;">
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;">请我喝咖啡</div>
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;max-width:500px;">
+      <div style="float:left;margin-left:50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">支付宝</div>
+        <image src="/resources/myqr/alipay.jpg"/>
+      </div>
+      <div style="float:left; margin-left: 50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">微信</div>
+        <image src="/resources/myqr/wechatpay.jpg"/>
+      </div>
+      <div style="clear:left;"></div>
+  </div>
+</div>
+
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/blog/2020/06/09/20200609202310.html" rel="next" title="k8s特性02 —— 自定义调度器">
+          k8s特性02 —— 自定义调度器
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://geedchin.com" target="_blank" rel="noopener">首页</a> |
+        <a class="bottom-item" href="https://geedchin.com" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/geedchin" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+    
+<!--
+
+<script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+<script src='/resources/lib/js/mermaid@7.1.2.min.js'></script>
+
+-->
+    
+	  <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+      
+	  <script>
+	    if (window.mermaid) {
+	      mermaid.initialize({theme: 'forest'});
+	    }
+	  </script>
+	
+</footer>
+  
+  <!-- scripts list from theme config.yml -->
+  
+    <script src="//cdn.bootcss.com/zepto/1.2.0/zepto.min.js"></script>
+  
+    <script src="/js/xoxo.js"></script>
+  
+
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+  <script type="text/javascript" src="/js/jquery-2.0.0.min.js"></script>
+  <script type="text/javascript" src="/js/click_show_text.js"></script>
+  <!--动态线条背景-->
+  <script type="text/javascript"
+  color="220,220,220" opacity='0.7' zIndex="-2" count="200" src="/js/canvas-nest.min.js">
+  </script>
+</body>
+</html>
