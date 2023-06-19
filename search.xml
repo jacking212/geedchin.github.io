@@ -607,9 +607,9 @@
 <figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> heapArena <span class="keyword">struct</span> &#123;</span><br><span class="line">	bitmap [heapArenaBitmapBytes]<span class="keyword">byte</span></span><br><span class="line">	spans [pagesPerArena]*mspan</span><br><span class="line">	pageInUse [pagesPerArena / <span class="number">8</span>]<span class="keyword">uint8</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <blockquote>
 <ol>
-<li><code>spans</code>成员变量保存了该<code>heapArena</code>中的mspan，该变量长度为 <code>heapArena大小/areaPageSize</code>。<br>某个page未被mspan使用时，它的值为nil，被使用时，则该page对应的索引值即为被使用的mspan的指针(当一个mspan使用多个page时，多个page索引对应值均为该mspan指针)。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB=8K=1024</li>
+<li><code>spans</code>成员变量保存了该<code>heapArena</code>中的mspan，该变量长度为 <code>heapArena大小/areaPageSize</code>。<br>某个page未被mspan使用时，它的值为nil，被使用时，则该page对应的索引值即为被使用的mspan的指针(当一个mspan使用多个page时，多个page索引对应值均为该mspan指针)。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB=8K=8096</li>
 <li><code>pageInUse</code>成员变量标记了该<code>arena</code>中哪些page被使用，哪些未被使用，使用位图标记，所以<code>数组长度=pagesPerArena/8=heapArena大小/areaPageSize/8</code>。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB/8=1K=1024</li>
-<li><code>bitmap</code>位图标记单位是<code>words</code>(arena中所有的words)，又因为bitmap中每2个bit表示一个<code>words</code>的2个属性(pointer/scalar)，所以<code>bitmap</code>数组长度应是 <code>heapArenaBytes/(len(words)*8/2)</code>即<code>arena字节数/words字节数/8*2</code>。<br>以linux 64位为例，arenaSize是64MB，则bitmap长度是 64MB/8B/8<em>2=2M 即 2</em>1024*1024</li>
+<li><code>bitmap</code>位图标记单位是<code>words</code>(arena中所有的words)，又因为bitmap中每2个bit表示一个<code>words</code>的2个属性(pointer/scalar)，所以<code>bitmap</code>数组长度应是 <code>heapArenaBytes/(len(words)*8/2)</code>即<code>arena字节数/words字节数/8*2</code>。<br>以linux 64位为例，arenaSize是64MB，则bitmap长度是 64MB/8B/8 * 2=2M 即 2 * 1024 * 1024</li>
 </ol>
 </blockquote>
 <h4 id="allspans"><a href="#allspans" class="headerlink" title="allspans"></a>allspans</h4><blockquote>
