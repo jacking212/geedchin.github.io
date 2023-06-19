@@ -1,0 +1,413 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#202020"/>
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <script src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script>
+  
+  
+    <meta name="keywords" content="k8s,k8s源码阅读,kubelet," />
+  
+
+  
+  
+    <meta name="description" content="k8s源码阅读04——kubelet" />
+  
+  
+  <link rel="icon" type="image/x-icon" href="/logo.png">
+  <title>k8s源码阅读04——kubelet [ Jacking ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css">
+    
+      <link rel="stylesheet" href="/css/xoxo.css">
+    
+  
+</head>
+
+
+<body>
+  <div class="nav-container">
+    <nav class="home-menu pure-menu pure-menu-horizontal">
+  <a class="pure-menu-heading" href="/">
+    <img class="avatar" src="http://blog.jacking.me/images/logo.png">
+    <span class="title">Jacking</span>
+  </a>
+
+  <ul class="pure-menu-list clearfix">
+      
+          
+            <li class="pure-menu-item"><a href="/" class="pure-menu-link">首页</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/archives/" class="pure-menu-link">归档</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/categories/" class="pure-menu-link">分类</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/tags/" class="pure-menu-link">标签</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/search" class="pure-menu-link">搜索</a></li>
+          
+      
+          
+            <li class="pure-menu-item"><a href="/about/" class="pure-menu-link">关于</a></li>
+          
+      
+  </ul>
+   
+</nav>
+  </div>
+
+  <div class="container" id="content-outer">
+    <div class="inner" id="content-inner">
+      <div class="post-container">
+  <article class="post" id="post">
+    <header class="post-header text-center">
+      <h1 class="title">
+        k8s源码阅读04——kubelet
+      </h1>
+      <span>
+        
+        <time class="time" datetime="2020-08-12T14:12:36.000Z">
+        2020-08-12
+      </time>
+        
+      </span>
+      <span class="slash">/</span>
+      <span class="post-meta">
+      <span class="post-tags">
+        <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s/" rel="tag">k8s</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/k8s%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">k8s源码阅读</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/kubelet/" rel="tag">kubelet</a></li></ul>
+      </span>
+    </span>
+      <span class="slash">/</span>
+      <span class="read">
+      <span id="busuanzi_value_page_pv"></span> 点击
+    </span>
+      <!--span class="slash">/</span>
+      <span class="read">阅读耗时 </span-->
+    </header>
+
+    <div class="post-content">
+      <!--
+
+
+-->
+
+<p>本文主要从kubelet启动过程入手分析。基于k8s 1.18.2</p>
+<h1 id="入口"><a href="#入口" class="headerlink" title="入口"></a>入口</h1><blockquote>
+<p>主进程入口 -&gt; cmd/kubelet/app/server.go run()  -&gt; RunKubelet().   RunKubelet()之前基本都是参数校验、初始化等。主要看开 RunKubelet()</p>
+<p>重点关注两个部分： </p>
+<ol>
+<li>createAndInitKubelet() 该部分初始化Kubelet，并启动GC </li>
+<li>startKubelet() 该部分为真正启动Kubelet服务的调用</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RunKubelet</span><span class="params">(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencies, runOnce <span class="keyword">bool</span>)</span> <span class="title">error</span></span> &#123;</span><br><span class="line">	</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	</span><br><span class="line">	<span class="comment">//  初始化 Kubelet对象，并启动GC 协程</span></span><br><span class="line">	<span class="comment">// GC协程包括两部分：containerGC、imageGC</span></span><br><span class="line">	k, err := createAndInitKubelet(<span class="comment">/* ... */</span>)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">"failed to create kubelet: %v"</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// NewMainKubelet should have set up a pod source config if one didn't exist</span></span><br><span class="line">	<span class="comment">// when the builder was run. This is just a precaution.</span></span><br><span class="line">	<span class="keyword">if</span> kubeDeps.PodConfig == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">"failed to create kubelet, pod source config was nil"</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	podCfg := kubeDeps.PodConfig</span><br><span class="line"></span><br><span class="line">	rlimit.RlimitNumFiles(<span class="keyword">uint64</span>(kubeServer.MaxOpenFiles))</span><br><span class="line"></span><br><span class="line">	<span class="comment">// process pods and exit.</span></span><br><span class="line">	<span class="keyword">if</span> runOnce &#123;</span><br><span class="line">		<span class="keyword">if</span> _, err := k.RunOnce(podCfg.Updates()); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">"runonce failed: %v"</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		klog.Info(<span class="string">"Started kubelet as runonce"</span>)</span><br><span class="line">	&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">		startKubelet(k, podCfg, &amp;kubeServer.KubeletConfiguration, kubeDeps, kubeServer.EnableCAdvisorJSONEndpoints, kubeServer.EnableServer)</span><br><span class="line">		klog.Info(<span class="string">"Started kubelet"</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="GC"><a href="#GC" class="headerlink" title="GC"></a>GC</h2><blockquote>
+<p>在<code>createAndInitKubelet(/* ... */)</code>方法中，初始化完Kubelet后，直接调用以下方法启动GC</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">StartGarbageCollection</span><span class="params">()</span></span> &#123;</span><br><span class="line">	loggedContainerGCFailure := <span class="literal">false</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.containerGC.GarbageCollect(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="comment">// 启动失败逻辑略...</span></span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="comment">// 启动成功逻辑略...</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;, ContainerGCPeriod, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// when the high threshold is set to 100, stub the image GC manager</span></span><br><span class="line">	<span class="keyword">if</span> kl.kubeletConfiguration.ImageGCHighThresholdPercent == <span class="number">100</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	prevImageGCFailed := <span class="literal">false</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.imageManager.GarbageCollect(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="comment">// 启动失败逻辑略...</span></span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="comment">// 启动成功逻辑略...</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;, ImageGCPeriod, wait.NeverStop)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="startKubelet"><a href="#startKubelet" class="headerlink" title="startKubelet"></a>startKubelet</h2><blockquote>
+<p>该函数重点关注内容：</p>
+<ol>
+<li>k.Run()</li>
+<li>k.ListenAndServe()</li>
+<li>k.ListenAndServePodResources()</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">startKubelet</span><span class="params">(k kubelet.Bootstrap, podCfg *config.PodConfig, kubeCfg *kubeletconfiginternal.KubeletConfiguration, kubeDeps *kubelet.Dependencies, enableCAdvisorJSONEndpoints, enableServer <span class="keyword">bool</span>)</span></span> &#123;</span><br><span class="line">	<span class="comment">// start the kubelet</span></span><br><span class="line">	<span class="keyword">go</span> k.Run(podCfg.Updates())</span><br><span class="line"></span><br><span class="line">	<span class="comment">// start the kubelet server</span></span><br><span class="line">	<span class="keyword">if</span> enableServer &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServe(net.ParseIP(kubeCfg.Address), <span class="keyword">uint</span>(kubeCfg.Port), kubeDeps.TLSOptions, kubeDeps.Auth, enableCAdvisorJSONEndpoints, kubeCfg.EnableDebuggingHandlers, kubeCfg.EnableContentionProfiling)</span><br><span class="line"></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> kubeCfg.ReadOnlyPort &gt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServeReadOnly(net.ParseIP(kubeCfg.Address), <span class="keyword">uint</span>(kubeCfg.ReadOnlyPort), enableCAdvisorJSONEndpoints)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> utilfeature.DefaultFeatureGate.Enabled(features.KubeletPodResources) &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServePodResources()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="k-Run"><a href="#k-Run" class="headerlink" title="k.Run()"></a>k.Run()</h3><blockquote>
+<p>该部分核心内容：</p>
+<ol>
+<li>kl.cloudResourceSyncManager.Run(wait.NeverStop) // </li>
+<li>kl.initializeModules() // 初始化不需要容器运行时启动的内部模块，注意此处启动的模块不能依赖不在这里init的模块。这里主要初始化和内容包括：  <ol>
+<li>metrics注册</li>
+<li>启动 imageManager，该方法内部启动两个协程：1. 定时刷新镜像使用时间 2. 定时更新本机镜像列表的缓存，做这些主要是为了给imageGC做依据</li>
+<li>启动 certificate manager  源码注释： 证书管理器负责成为Kubelet中证书的权威来源，并处理由于轮换而导致的更新。</li>
+<li>启动 oomWatcher  oomWatcher接收由 Cadvisor 发送的OOM 事件，并且记录OOM事件(主要作用就是记录日志)</li>
+<li>启动 resourceAnalyzer  ra.fsResourceAnalyzer.Start() , 计算并缓存已知的每个Pod的PodVolumeStats 到kubelet</li>
+</ol>
+</li>
+<li>kl.volumeManager.Run() ，启动volume管理器，主要包括：<ol>
+<li>vm.desiredStateOfWorldPopulator ，源码注释：DesiredStateOfWorldPopulator定期循环查看活动pod的列表，并确保每个pod都存在于所需的world缓存状态（如果它有卷）。它还验证处于所需状态的pod是否仍然存在，如果不存在，则删除它们。</li>
+<li>vm.reconciler ，源码注释：Reconciler运行一个周期性循环，通过触发attach、detach、mount和unmount操作，将volume的期望状态与实际状态进行协调。</li>
+<li>vm.volumePluginMgr，csiDriver Informer，csiDriver类型资源的控制循环(实际无控制逻辑，启动后使本地可以使用csDriver缓存)</li>
+</ol>
+</li>
+<li>wait.Until(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, wait.NeverStop)，同步节点状态，源码注释：如果最后一次同步有任何变化或经过足够的时间，它将节点状态同步到主节点，必要时首先注册kubelet。</li>
+<li>kl.nodeLeaseController.Run(wait.NeverStop)</li>
+<li>wait.Until(kl.updateRuntimeUp, 5*time.Second, wait.NeverStop)  源码注释：在容器运行时首次出现时初始化依赖于运行时的模块，如果状态检查失败，则返回错误。如果状态检查正常，请更新kubelet runtimeState中的容器运行时正常运行时间。<br> 6.1 kl.oneTimeInitializer.Do(kl.initializeRuntimeDependentModules)  初始化运行时依赖模块：cadvisor、containerManager、evictionManager、containerLogManager、pluginManager（增加pluginHandler并启动）、</li>
+<li>kl.initNetworkUtil()  ， 监控iptables规则，确保网络实用程序在主机上存在，网络工具包括：<ol>
+<li>NAT表中，KUBE-MARK-DROP 用于标记待删除的连接，标记的连接将放置在filter表的 INPUT/OUTPUT链上</li>
+<li>NAT表中，KUBE-MARK-MASQ 规则用于为SNAT标记连接，标记的SNAT连接将配置在nat表的POSTROUTING 链上</li>
+</ol>
+</li>
+<li>wait.Until(kl.podKiller, 1*time.Second, wait.NeverStop) 注释：如果pod未被运行，将被写入此处channel，podKiller启动goroutine来杀死从channel接收的pod。</li>
+<li>kl.statusManager.Start()，启动pod状态管理器：更新apiserver中pod的状态</li>
+<li>kl.probeManager.Start()，启动probe管理器</li>
+<li>kl.runtimeClassManager.Start(wait.NeverStop)，启动runtimeClass管理器</li>
+<li>kl.pleg.Start()    PodLifecycleEventGenerator，</li>
+<li>kl.syncLoop(updates, kl)，</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">Run</span><span class="params">(updates &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate)</span></span> &#123;</span><br><span class="line">	</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	<span class="comment">// Start the cloud provider sync manager</span></span><br><span class="line">	<span class="keyword">if</span> kl.cloudResourceSyncManager != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">go</span> kl.cloudResourceSyncManager.Run(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := kl.initializeModules(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.KubeletSetupFailed, err.Error())</span><br><span class="line">		klog.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start volume manager</span></span><br><span class="line">	<span class="keyword">go</span> kl.volumeManager.Run(kl.sourcesReady, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> kl.kubeClient != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="comment">// Start syncing node status immediately, this may set up things the runtime needs to run.</span></span><br><span class="line">		<span class="keyword">go</span> wait.Until(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, wait.NeverStop)</span><br><span class="line">		<span class="keyword">go</span> kl.fastStatusUpdateOnce()</span><br><span class="line"></span><br><span class="line">		<span class="comment">// start syncing lease</span></span><br><span class="line">		<span class="keyword">go</span> kl.nodeLeaseController.Run(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">go</span> wait.Until(kl.updateRuntimeUp, <span class="number">5</span>*time.Second, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Set up iptables util rules</span></span><br><span class="line">	<span class="keyword">if</span> kl.makeIPTablesUtilChains &#123;</span><br><span class="line">		kl.initNetworkUtil()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start a goroutine responsible for killing pods (that are not properly</span></span><br><span class="line">	<span class="comment">// handled by pod workers).</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(kl.podKiller, <span class="number">1</span>*time.Second, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start component sync loops.</span></span><br><span class="line">	kl.statusManager.Start()</span><br><span class="line">	kl.probeManager.Start()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start syncing RuntimeClasses if enabled.</span></span><br><span class="line">	<span class="keyword">if</span> kl.runtimeClassManager != <span class="literal">nil</span> &#123;</span><br><span class="line">		kl.runtimeClassManager.Start(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start the pod lifecycle event generator.</span></span><br><span class="line">	kl.pleg.Start()</span><br><span class="line">	kl.syncLoop(updates, kl)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="kubelet-pleg-Start"><a href="#kubelet-pleg-Start" class="headerlink" title="kubelet.pleg.Start"></a>kubelet.pleg.Start</h4><blockquote>
+<p>PLEG （podLifeEventGenerator，在指定的时间间隔后列出pod/containers，对比他们并生成相应事件）核心逻辑：</p>
+<ol>
+<li>通过 kubecontainer.Runtime接口获取pods（实时从底层容器服务查询的容器信息，经过封装变成简单的pod对象），此处pod非k8s资源中的Pod，此处pod数据简单，只包含一组container，没有Pod资源那么多属性。(rpc调用链[使用默认容器运行时docker]：runtime-&gt;dockershim-&gt;dockerd)</li>
+<li>比较新旧pods，根据containerState是否发生变化来生成对应的event</li>
+<li>遍历event，并将事件发送到eventChannel，中间夹杂着ReInspect的逻辑</li>
+</ol>
+<p>最后，eventChannel 这个channel是在 kubelet.Run-&gt;kubelet.syncLoop 中被消费</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Start spawns a goroutine to relist periodically.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *GenericPLEG)</span> <span class="title">Start</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">go</span> wait.Until(g.relist, g.relistPeriod, wait.NeverStop)</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// relist queries the container runtime for list of pods/containers, compare</span></span><br><span class="line"><span class="comment">// with the internal pods/containers, and generates events accordingly.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *GenericPLEG)</span> <span class="title">relist</span><span class="params">()</span></span> &#123;</span><br><span class="line">	klog.V(<span class="number">5</span>).Infof(<span class="string">"GenericPLEG: Relisting"</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> lastRelistTime := g.getRelistTime(); !lastRelistTime.IsZero() &#123;</span><br><span class="line">		metrics.PLEGRelistInterval.Observe(metrics.SinceInSeconds(lastRelistTime))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	timestamp := g.clock.Now()</span><br><span class="line">	<span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		metrics.PLEGRelistDuration.Observe(metrics.SinceInSeconds(timestamp))</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 1. </span></span><br><span class="line">	podList, err := g.runtime.GetPods(<span class="literal">true</span>)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		klog.Errorf(<span class="string">"GenericPLEG: Unable to retrieve pods: %v"</span>, err)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	g.updateRelistTime(timestamp)</span><br><span class="line">	</span><br><span class="line">	pods := kubecontainer.Pods(podList)</span><br><span class="line">	<span class="comment">// update running pod and container count</span></span><br><span class="line">	updateRunningPodAndContainerMetrics(pods)</span><br><span class="line">	g.podRecords.setCurrent(pods)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 2. 比较新旧pods，并生成podLifecycleEvent</span></span><br><span class="line">	eventsByPodID := <span class="keyword">map</span>[types.UID][]*PodLifecycleEvent&#123;&#125;</span><br><span class="line">	<span class="keyword">for</span> pid := <span class="keyword">range</span> g.podRecords &#123;</span><br><span class="line">		oldPod := g.podRecords.getOld(pid)</span><br><span class="line">		pod := g.podRecords.getCurrent(pid)</span><br><span class="line">		<span class="comment">// Get all containers in the old and the new pod.</span></span><br><span class="line">		allContainers := getContainersFromPods(oldPod, pod)</span><br><span class="line">		<span class="keyword">for</span> _, container := <span class="keyword">range</span> allContainers &#123;</span><br><span class="line">			events := computeEvents(oldPod, pod, &amp;container.ID)</span><br><span class="line">			<span class="keyword">for</span> _, e := <span class="keyword">range</span> events &#123;</span><br><span class="line">				updateEvents(eventsByPodID, e)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> needsReinspection <span class="keyword">map</span>[types.UID]*kubecontainer.Pod</span><br><span class="line">	<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">		needsReinspection = <span class="built_in">make</span>(<span class="keyword">map</span>[types.UID]*kubecontainer.Pod)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 3.</span></span><br><span class="line">	<span class="keyword">for</span> pid, events := <span class="keyword">range</span> eventsByPodID &#123;</span><br><span class="line">		pod := g.podRecords.getCurrent(pid)</span><br><span class="line">		<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">			</span><br><span class="line">			<span class="keyword">if</span> err := g.updateCache(pod, pid); err != <span class="literal">nil</span> &#123;</span><br><span class="line">				<span class="comment">// Rely on updateCache calling GetPodStatus to log the actual error.</span></span><br><span class="line">				klog.V(<span class="number">4</span>).Infof(<span class="string">"PLEG: Ignoring events for pod %s/%s: %v"</span>, pod.Name, pod.Namespace, err)</span><br><span class="line">				needsReinspection[pid] = pod</span><br><span class="line"></span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				<span class="built_in">delete</span>(g.podsToReinspect, pid)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// Update the internal storage and send out the events.</span></span><br><span class="line">		g.podRecords.update(pid)</span><br><span class="line">		<span class="keyword">for</span> i := <span class="keyword">range</span> events &#123;</span><br><span class="line">			<span class="comment">// Filter out events that are not reliable and no other components use yet.</span></span><br><span class="line">			<span class="keyword">if</span> events[i].Type == ContainerChanged &#123;</span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">select</span> &#123;</span><br><span class="line">			<span class="keyword">case</span> g.eventChannel &lt;- events[i]:</span><br><span class="line">			<span class="keyword">default</span>:</span><br><span class="line">				metrics.PLEGDiscardEvents.Inc()</span><br><span class="line">				klog.Error(<span class="string">"event channel is full, discard this relist() cycle event"</span>)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">		<span class="comment">// reinspect any pods that failed inspection during the previous relist</span></span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(g.podsToReinspect) &gt; <span class="number">0</span> &#123;</span><br><span class="line">			klog.V(<span class="number">5</span>).Infof(<span class="string">"GenericPLEG: Reinspecting pods that previously failed inspection"</span>)</span><br><span class="line">			<span class="keyword">for</span> pid, pod := <span class="keyword">range</span> g.podsToReinspect &#123;</span><br><span class="line">				<span class="keyword">if</span> err := g.updateCache(pod, pid); err != <span class="literal">nil</span> &#123;</span><br><span class="line">					<span class="comment">// Rely on updateCache calling GetPodStatus to log the actual error.</span></span><br><span class="line">					klog.V(<span class="number">5</span>).Infof(<span class="string">"PLEG: pod %s/%s failed reinspection: %v"</span>, pod.Name, pod.Namespace, err)</span><br><span class="line">					needsReinspection[pid] = pod</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// Update the cache timestamp.  This needs to happen *after*</span></span><br><span class="line">		<span class="comment">// all pods have been properly updated in the cache.</span></span><br><span class="line">		g.cache.UpdateTime(timestamp)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// make sure we retain the list of pods that need reinspecting the next time relist is called</span></span><br><span class="line">	g.podsToReinspect = needsReinspection</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="kubelet-syncLoop"><a href="#kubelet-syncLoop" class="headerlink" title="kubelet.syncLoop"></a>kubelet.syncLoop</h4><figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// syncLoop是处理pod变化的主循环，它主要从3个地方接收pod变化事件(file,apiserver,http)，对于任一变化事件，该循环将同步当前状态与期望状态，无事件则按照设置的周期来定期同步。</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">syncLoop</span><span class="params">(updates &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate, handler SyncHandler)</span></span> &#123;</span><br><span class="line">	klog.Info(<span class="string">"Starting kubelet main sync loop."</span>)</span><br><span class="line">	syncTicker := time.NewTicker(time.Second)</span><br><span class="line">	<span class="keyword">defer</span> syncTicker.Stop()</span><br><span class="line">	housekeepingTicker := time.NewTicker(housekeepingPeriod)</span><br><span class="line">	<span class="keyword">defer</span> housekeepingTicker.Stop()</span><br><span class="line">	plegCh := kl.pleg.Watch()</span><br><span class="line">	<span class="keyword">const</span> (</span><br><span class="line">		base   = <span class="number">100</span> * time.Millisecond</span><br><span class="line">		max    = <span class="number">5</span> * time.Second</span><br><span class="line">		factor = <span class="number">2</span></span><br><span class="line">	)</span><br><span class="line">	duration := base</span><br><span class="line">	<span class="keyword">if</span> kl.dnsConfigurer != <span class="literal">nil</span> &amp;&amp; kl.dnsConfigurer.ResolverConfig != <span class="string">""</span> &#123;</span><br><span class="line">		kl.dnsConfigurer.CheckLimitsForResolvConf()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.runtimeState.runtimeErrors(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			klog.Errorf(<span class="string">"skipping pod synchronization - %v"</span>, err)</span><br><span class="line">			<span class="comment">// exponential backoff</span></span><br><span class="line">			time.Sleep(duration)</span><br><span class="line">			duration = time.Duration(math.Min(<span class="keyword">float64</span>(max), factor*<span class="keyword">float64</span>(duration)))</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// reset backoff if we have a success</span></span><br><span class="line">		duration = base</span><br><span class="line"></span><br><span class="line">		kl.syncLoopMonitor.Store(kl.clock.Now())</span><br><span class="line">		<span class="keyword">if</span> !kl.syncLoopIteration(updates, handler, syncTicker.C, housekeepingTicker.C, plegCh) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		kl.syncLoopMonitor.Store(kl.clock.Now())</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// syncLoop核心逻辑：</span></span><br><span class="line"><span class="comment">// 执行事件源: </span></span><br><span class="line"><span class="comment">// 1. configCh 外部其他协程写入podUpdate对象 </span></span><br><span class="line"><span class="comment">//     此时根据podUpdate事件Op类型来执行相应的handler： ADD,UPDATE,REMOVE,RECONCILE,DELETE</span></span><br><span class="line"><span class="comment">// 2. plegCh被写入对象(pleg协程) </span></span><br><span class="line"><span class="comment">//     调用 handler.sync，如果容器挂掉，则执行容器清理程序</span></span><br><span class="line"><span class="comment">// 3. 同步周期时间到 </span></span><br><span class="line"><span class="comment">//     调用handler.sync</span></span><br><span class="line"><span class="comment">// 4. 存活检查mng接收到事件</span></span><br><span class="line"><span class="comment">//     调用handler.sync</span></span><br><span class="line"><span class="comment">// 5. housekeepingCh 周期到达</span></span><br><span class="line"><span class="comment">//     </span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">syncLoopIteration</span><span class="params">(configCh &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate, handler SyncHandler,</span></span></span><br><span class="line"><span class="function"><span class="params">	syncCh &lt;-<span class="keyword">chan</span> time.Time, housekeepingCh &lt;-<span class="keyword">chan</span> time.Time, plegCh &lt;-<span class="keyword">chan</span> *pleg.PodLifecycleEvent)</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> u, open := &lt;-configCh:</span><br><span class="line">		<span class="keyword">if</span> !open &#123;</span><br><span class="line">			klog.Errorf(<span class="string">"Update channel is closed. Exiting the sync loop."</span>)</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">switch</span> u.Op &#123;</span><br><span class="line">		<span class="keyword">case</span> kubetypes.ADD:</span><br><span class="line">			handler.HandlePodAdditions(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.UPDATE:</span><br><span class="line">			handler.HandlePodUpdates(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.REMOVE:</span><br><span class="line">			handler.HandlePodRemoves(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.RECONCILE:</span><br><span class="line">			handler.HandlePodReconcile(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.DELETE:</span><br><span class="line">			<span class="comment">// DELETE is treated as a UPDATE because of graceful deletion.</span></span><br><span class="line">			handler.HandlePodUpdates(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.RESTORE:</span><br><span class="line">			<span class="comment">// These are pods restored from the checkpoint. Treat them as new pods.</span></span><br><span class="line">			handler.HandlePodAdditions(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.SET:</span><br><span class="line">			<span class="comment">// <span class="doctag">TODO:</span> Do we want to support this?</span></span><br><span class="line">			klog.Errorf(<span class="string">"Kubelet does not support snapshot update"</span>)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> u.Op != kubetypes.RESTORE &#123;</span><br><span class="line">			kl.sourcesReady.AddSource(u.Source)</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> e := &lt;-plegCh:</span><br><span class="line">		<span class="keyword">if</span> isSyncPodWorthy(e) &#123;</span><br><span class="line">			<span class="comment">// PLEG event for a pod; sync it.</span></span><br><span class="line">			<span class="keyword">if</span> pod, ok := kl.podManager.GetPodByUID(e.ID); ok &#123;</span><br><span class="line">				handler.HandlePodSyncs([]*v1.Pod&#123;pod&#125;)</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				<span class="comment">// If the pod no longer exists, ignore the event.</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> e.Type == pleg.ContainerDied &#123;</span><br><span class="line">			<span class="keyword">if</span> containerID, ok := e.Data.(<span class="keyword">string</span>); ok &#123;</span><br><span class="line">				kl.cleanUpContainersInPod(e.ID, containerID)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-syncCh:</span><br><span class="line">		<span class="comment">// Sync pods waiting for sync</span></span><br><span class="line">		podsToSync := kl.getPodsToSync()</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(podsToSync) == <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		handler.HandlePodSyncs(podsToSync)</span><br><span class="line">	<span class="keyword">case</span> update := &lt;-kl.livenessManager.Updates():</span><br><span class="line">		<span class="keyword">if</span> update.Result == proberesults.Failure &#123;</span><br><span class="line">			pod, ok := kl.podManager.GetPodByUID(update.PodUID)</span><br><span class="line">			<span class="keyword">if</span> !ok &#123;</span><br><span class="line">				<span class="comment">// If the pod no longer exists, ignore the update.</span></span><br><span class="line">				<span class="keyword">break</span></span><br><span class="line">			&#125;</span><br><span class="line">			handler.HandlePodSyncs([]*v1.Pod&#123;pod&#125;)</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-housekeepingCh:</span><br><span class="line">		<span class="keyword">if</span> !kl.sourcesReady.AllReady() &#123;</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="keyword">if</span> err := handler.HandlePodCleanups(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">				klog.Errorf(<span class="string">"Failed cleaning pods: %v"</span>, err)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    <div>全文完。</div>
+  </article>
+  <div class="toc-container">
+    
+  <div id="toc" class="toc-article">
+    <strong class="toc-title">目录</strong>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#入口"><span class="toc-text">入口</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#GC"><span class="toc-text">GC</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#startKubelet"><span class="toc-text">startKubelet</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#k-Run"><span class="toc-text">k.Run()</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#kubelet-pleg-Start"><span class="toc-text">kubelet.pleg.Start</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#kubelet-syncLoop"><span class="toc-text">kubelet.syncLoop</span></a></li></ol></li></ol></li></ol></li></ol>
+  </div>
+
+
+  </div>
+</div>
+<div class="copyright">
+    <span>本作品采用</span>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">知识共享署名 4.0 国际许可协议</a>
+    <span>进行许可。 转载时请注明原文链接。</span>
+</div>
+<div class="share" style="width: 100%;">
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;">请我喝咖啡</div>
+  <div style="margin: auto; text-align: center; font-size: 0.8em; color: grey;max-width:500px;">
+      <div style="float:left;margin-left:50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">支付宝</div>
+        <image src="/resources/myqr/alipay.jpg"/>
+      </div>
+      <div style="float:left; margin-left: 50px;">
+        <div style="margin: auto; text-align: center; font-size: 0.8em; color: red;">微信</div>
+        <image src="/resources/myqr/wechatpay.jpg"/>
+      </div>
+      <div style="clear:left;"></div>
+  </div>
+</div>
+
+  
+    <div class="post-nav">
+      <div class="post-nav-item post-nav-next">
+        
+          <span>〈 </span>
+          <a href="/blog/2020/06/17/20220717221310.html" rel="next" title="k8s特性03 —— 自定义资源-2">
+          k8s特性03 —— 自定义资源-2
+          </a>
+        
+      </div>
+  
+      <div class="post-nav-item post-nav-prev">
+          
+          <a href="/blog/2021/12/16/20211216000341.html" rel="prev" title="k8s特性04 —— 存储01(pv/pvc/storageclass)">
+            k8s特性04 —— 存储01(pv/pvc/storageclass)
+          </a>
+          <span>〉</span>
+        
+      </div>
+    </div>
+  
+
+
+    </div>
+
+    
+
+  </div>
+  <footer class="footer text-center">
+    <div id="bottom-inner">
+        <a class="bottom-item" href="https://geedchin.com" target="_blank" rel="noopener">首页</a> |
+        <a class="bottom-item" href="https://geedchin.com" target="_blank">主站</a> |
+        <a class="bottom-item" href="https://github.com/geedchin" target="_blank">GitHub</a> |
+        <a class="bottom-item" href="https://hexo.io" target="_blank">Powered by hexo</a> |
+        <a class="bottom-item" href="https://github.com/KevinOfNeu/hexo-theme-xoxo" target="_blank">Theme xoxo</a>
+    </div>
+    
+<!--
+
+<script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+<script src='/resources/lib/js/mermaid@7.1.2.min.js'></script>
+
+-->
+    
+	  <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+      
+	  <script>
+	    if (window.mermaid) {
+	      mermaid.initialize({theme: 'forest'});
+	    }
+	  </script>
+	
+</footer>
+  
+  <!-- scripts list from theme config.yml -->
+  
+    <script src="//cdn.bootcss.com/zepto/1.2.0/zepto.min.js"></script>
+  
+    <script src="/js/xoxo.js"></script>
+  
+
+
+<script>
+  (function(window, document, undefined) {
+
+    var timer = null;
+
+    function returnTop() {
+      cancelAnimationFrame(timer);
+      timer = requestAnimationFrame(function fn() {
+        var oTop = document.body.scrollTop || document.documentElement.scrollTop;
+        if (oTop > 0) {
+          document.body.scrollTop = document.documentElement.scrollTop = oTop - 50;
+          timer = requestAnimationFrame(fn);
+        } else {
+          cancelAnimationFrame(timer);
+        }
+      });
+    }
+
+    var hearts = [];
+    window.requestAnimationFrame = (function() {
+      return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(callback) {
+          setTimeout(callback, 1000 / 60);
+        }
+    })();
+    init();
+
+    function init() {
+      css(".heart{z-index:9999;width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: absolute;}.heart:after{top: -5px;}.heart:before{left: -5px;}");
+      attachEvent();
+      gameloop();
+      addMenuEvent();
+    }
+
+    function gameloop() {
+      for (var i = 0; i < hearts.length; i++) {
+        if (hearts[i].alpha <= 0) {
+          document.body.removeChild(hearts[i].el);
+          hearts.splice(i, 1);
+          continue;
+        }
+        hearts[i].y--;
+        hearts[i].scale += 0.004;
+        hearts[i].alpha -= 0.013;
+        hearts[i].el.style.cssText = "left:" + hearts[i].x + "px;top:" + hearts[i].y + "px;opacity:" + hearts[i].alpha + ";transform:scale(" + hearts[i].scale + "," + hearts[i].scale + ") rotate(45deg);background:" + hearts[i].color;
+      }
+      requestAnimationFrame(gameloop);
+    }
+
+    /**
+     * 给logo设置点击事件
+     * 
+     * - 回到顶部
+     * - 出现爱心
+     */
+    function attachEvent() {
+      var old = typeof window.onclick === "function" && window.onclick;
+      var logo = document.getElementById("logo");
+      if (logo) {
+        logo.onclick = function(event) {
+          returnTop();
+          old && old();
+          createHeart(event);
+        }
+      }
+      
+    }
+
+    function createHeart(event) {
+      var d = document.createElement("div");
+      d.className = "heart";
+      hearts.push({
+        el: d,
+        x: event.clientX - 5,
+        y: event.clientY - 5,
+        scale: 1,
+        alpha: 1,
+        color: randomColor()
+      });
+      document.body.appendChild(d);
+    }
+
+    function css(css) {
+      var style = document.createElement("style");
+      style.type = "text/css";
+      try {
+        style.appendChild(document.createTextNode(css));
+      } catch (ex) {
+        style.styleSheet.cssText = css;
+      }
+      document.getElementsByTagName('head')[0].appendChild(style);
+    }
+
+    function randomColor() {
+      // return "rgb(" + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + "," + (~~(Math.random() * 255)) + ")";
+      return "#F44336";
+    }
+
+    function addMenuEvent() {
+      var menu = document.getElementById('menu-main-post');
+      if (menu) {
+        var toc = document.getElementById('toc');
+        if (toc) {
+          menu.onclick = function() {
+            if (toc) {
+              if (toc.style.display == 'block') {
+                toc.style.display = 'none';
+              } else {
+                toc.style.display = 'block';
+              }
+            }
+          };
+        } else {
+          menu.style.display = 'none';
+        }
+      }
+    }
+
+  })(window, document);
+</script>
+
+  
+
+
+
+  <script type="text/javascript" src="/js/jquery-2.0.0.min.js"></script>
+  <script type="text/javascript" src="/js/click_show_text.js"></script>
+  <!--动态线条背景-->
+  <script type="text/javascript"
+  color="220,220,220" opacity='0.7' zIndex="-2" count="200" src="/js/canvas-nest.min.js">
+  </script>
+</body>
+</html>

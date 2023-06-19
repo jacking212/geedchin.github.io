@@ -1,6 +1,204 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>k8s特性04 —— 存储01(pv/pvc/storageclass)</title>
+    <url>/blog/2021/12/16/20211216000341.html</url>
+    <content><![CDATA[<h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><blockquote>
+<p>在Pod对象中，如果一个容器需要使用到存储的话，可以通过以下这种方式：</p>
+</blockquote>
+<figure class="highlight yaml"><table><tr><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Pod</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">nginx-test</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">containers:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">nginx</span></span><br><span class="line">    <span class="attr">image:</span> <span class="string">nginx</span></span><br><span class="line">    <span class="attr">imagePullPolicy:</span> <span class="string">IfNotPresent</span></span><br><span class="line">    <span class="attr">volumeMounts:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">vol</span></span><br><span class="line">      <span class="attr">mountPath:</span> <span class="string">/app</span> </span><br><span class="line">  <span class="attr">volumes:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">vol</span> </span><br><span class="line">    <span class="attr">nfs:</span> </span><br><span class="line">      <span class="attr">path:</span> <span class="string">/app/data/nfsdata/DATA_00</span></span><br><span class="line">      <span class="attr">server:</span> <span class="number">10.1</span><span class="number">.1</span><span class="number">.15</span></span><br></pre></td></tr></table></figure>
+<blockquote>
+<p> 在 pod.spec.volumes 仍然定义了其他很多种类型的存储可以使用: <code>awsElasticBlockStore</code> <code>cephfs</code> <code>gcePersistentDisk</code> <code>glusterfs</code> 等等。</p>
+</blockquote>
+<blockquote>
+<p>得益于K8S的这种设计，在Pod中可以直接定义并使用多种存储，但这样使用存储带来了另外的问题：</p>
+<ol>
+<li>使用k8s的开发者需要对存储要有所了解，才能够正确使用，这增加了使用的复杂度</li>
+<li>对于使用到的存储，其地址、授权信息都暴露给用户，增加了信息暴露风险</li>
+</ol>
+</blockquote>
+<blockquote>
+<p>通常来讲，对于开发者，他们并不需要关注底层的存储连接信息、如何配置、甚至不必关注存储地址，只需要告诉系统要使用多大存储以及读写权限即可。</p>
+<p>基于这种情况，K8S 引入了另外一种存储对象：PV(persistent volume) PVC(persistent volume claim)，用于降低用户使用存储的门槛。</p>
+</blockquote>
+<h1 id="PV-PVC"><a href="#PV-PVC" class="headerlink" title="PV / PVC"></a>PV / PVC</h1><blockquote>
+<p>PV: Persistent Volume，持久化存储卷。详细的定义了存储卷的类型、大小、连接挂载方式等。</p>
+<p>PVC: Persistent Volume Claim，持久化存储卷声明。定义了存储卷大小、读写权限等，没有存储卷的细节信息。</p>
+</blockquote>
+<blockquote>
+<p>开发者需要使用到存储时，只需要： 1. 定义<code>pvc</code>; 2. 在<code>pod</code>的<code>volume</code>配置中引用<code>pvc</code>。不需要关注存储本身。存储则由运维人员添加。</p>
+<p>在这种设计中，将存储的定义与实现解耦，开发者关注定义<code>pvc</code>，运维人员关注实现(<code>pv</code>)，实现了职责分离，也避免向外部暴露更多存储信息。</p>
+</blockquote>
+<h1 id="静态提供存储-static-provisioning"><a href="#静态提供存储-static-provisioning" class="headerlink" title="静态提供存储(static provisioning)"></a>静态提供存储(static provisioning)</h1><blockquote>
+<p>由运维人员创建出<code>pv</code>。开发者定义<code>pvc</code>，然后由<code>controller-manager</code>来找到最合适的<code>pv</code>然后绑定它，然后给用户使用（也可以在<code>pvc</code>的定义中，通过<code>pvc.spec.volumeName</code>来指定绑定某一个特定的<code>pv</code>。）。</p>
+</blockquote>
+<h1 id="动态提供存储-dynamic-provisioning"><a href="#动态提供存储-dynamic-provisioning" class="headerlink" title="动态提供存储(dynamic provisioning)"></a>动态提供存储(dynamic provisioning)</h1><blockquote>
+<p>在静态提供存储中，需要人工创建大量的<code>pv</code>给用户使用，但在实际应用场景中，是个比较麻烦的工作。因此，k8s中设计了动态提供存储(dynamic provisioning)的功能（CSI）。</p>
+</blockquote>
+<h2 id="CSI设计"><a href="#CSI设计" class="headerlink" title="CSI设计"></a><code>CSI</code>设计</h2><p><img src="/resources/post_pic/2022/01/pic01-csi-arch.png" alt="csi架构设计" title="csi架构设计"></p>
+<blockquote>
+<p>如图，是csi架构设计。</p>
+<p>csi的架构协作者主要包括四部分：</p>
+<ol>
+<li>k8s：使用k8s的主体，参与<code>csi</code>协作的组件主要有：<ol>
+<li>apiserver</li>
+<li>scheduler（主要针对立即绑定的<code>storageClass</code>类型，在<code>pod</code>调度前要先创建出PV，<code>scheduler</code>作条件判断）</li>
+<li>kubelet（<code>pod</code>启动过程中，需要挂载存储，调用<code>csiNode</code>）</li>
+</ol>
+</li>
+<li>external components：由k8s社区维护，打通k8s与用户开发组件的中间层，主要包括以下组件：<ol>
+<li>driverRegistar: 负责注册用户<code>csi</code>组件</li>
+<li>externalProvisionor: 负责监听<code>apiserver</code>的<code>pvc</code>，然后调用用户组件创建存储以及pv等</li>
+<li>externalAttacher: 负责<code>attach/unattach</code>操作，对应csi中的<code>publishing/unpublishing</code>(attach区别于主机<code>attach</code>存储的操作，个人理解这里相当于把存储<code>attach</code>到云上，并非<code>attach</code>到具体<code>node</code>上)</li>
+</ol>
+</li>
+<li>custom components：用户自定义开发的组件，用于管理存储，主要3个组件：<ol>
+<li>csiIdentify: csi标识</li>
+<li>csiCcontroller: 存储控制器（<code>publish/unpublish</code>、<code>create/delete vol</code>、<code>snapshot</code>等操作）</li>
+<li>csiNode: 节点插件，<code>daemonset</code>方式运行，每个节点都要有，由kubelet调用(<code>node stage/unstage</code>:挂载存储到主机、<code>node publish/unpublish</code>:mount存储到<code>pod</code>目录  等操作)</li>
+</ol>
+</li>
+<li>external persistent storage：外部存储供应商，提供存储服务。主要由用户自开发组件中的<code>controller</code>中的调用。</li>
+</ol>
+</blockquote>
+<h3 id="storageClass"><a href="#storageClass" class="headerlink" title="storageClass"></a>storageClass</h3><blockquote>
+<p>在<code>CSI</code>的设计中，<code>storageClass</code>是核心的API 资源，它定义了管理存储者(<code>provisioner</code>)的名字以及创建存储时额外的参数、挂载opt、回收策略、pv绑定策略等。</p>
+</blockquote>
+<h2 id="立即绑定"><a href="#立即绑定" class="headerlink" title="立即绑定"></a>立即绑定</h2><blockquote>
+<p>情形1： 未设置<code>storageClass</code></p>
+<p>此时，<code>controllerManager</code>会自动寻找最合适的<code>pv</code>，并将其与<code>pvc</code>绑定</p>
+<hr>
+<p>情形2：设置<code>storageClass</code>，但<code>sotrageClass</code>的<code>VOLUMEBINDINGMODE</code>为<code>Immediate</code><br>此时，<code>controllerManager</code>会自动寻找最合适的<code>pv</code>，并将其与<code>pvc</code>绑定。不同于情形1的是，此处的pv可能是由管理员添加，或者由<code>provisioner</code>添加(<code>provisioner</code>会立即调用相关方法生成<code>pv</code>)。（此处管理员添加的<code>pv</code>的<code>storageClass</code>要同<code>pvc</code>的<code>storageClass</code>一致才可以绑定）</p>
+</blockquote>
+<h2 id="延迟绑定"><a href="#延迟绑定" class="headerlink" title="延迟绑定"></a>延迟绑定</h2><blockquote>
+<p>未设置<code>storageClass</code>且未配置默认的<code>storageClass</code>时，不存在延迟绑定</p>
+<hr>
+<p>情形：设置<code>storageClass</code>，且其<code>VOLUMEBINDINGMODE</code>值为<code>WaitForFirstConsumer</code><br>此时，在控制器控制循环内不会绑定<code>pv</code>，在该<code>pvc</code>被使用时，才会绑定。过程：</p>
+<ol>
+<li><code>waitForConsumer</code></li>
+<li>创建使用<code>pvc</code>的<code>pod</code></li>
+<li><code>pod</code>调度器在<code>pvc</code>上打上<code>annotation</code>(<code>volume.kubernetes.io/selected-node</code>) </li>
+<li><code>controller-manager</code>给<code>pvc</code>打上<code>annotation</code>(<code>volume.beta.kubernetes.io/storage-provisioner</code>) </li>
+<li><code>external-provisioner</code>调用<code>csi</code>方法创建<code>pv</code>(创建出来的<code>pv</code>已经带上<code>pvc</code>了) </li>
+<li><code>controller-manager</code>执行绑定操作</li>
+</ol>
+</blockquote>
+<h1 id="storageClass-1"><a href="#storageClass-1" class="headerlink" title="storageClass"></a>storageClass</h1>]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s特性</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s特性</tag>
+        <tag>存储</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>k8s源码阅读04——kubelet</title>
+    <url>/blog/2020/08/12/20200812221236.html</url>
+    <content><![CDATA[<!--
+
+
+-->
+
+<p>本文主要从kubelet启动过程入手分析。基于k8s 1.18.2</p>
+<h1 id="入口"><a href="#入口" class="headerlink" title="入口"></a>入口</h1><blockquote>
+<p>主进程入口 -&gt; cmd/kubelet/app/server.go run()  -&gt; RunKubelet().   RunKubelet()之前基本都是参数校验、初始化等。主要看开 RunKubelet()</p>
+<p>重点关注两个部分： </p>
+<ol>
+<li>createAndInitKubelet() 该部分初始化Kubelet，并启动GC </li>
+<li>startKubelet() 该部分为真正启动Kubelet服务的调用</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RunKubelet</span><span class="params">(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencies, runOnce <span class="keyword">bool</span>)</span> <span class="title">error</span></span> &#123;</span><br><span class="line">	</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	</span><br><span class="line">	<span class="comment">//  初始化 Kubelet对象，并启动GC 协程</span></span><br><span class="line">	<span class="comment">// GC协程包括两部分：containerGC、imageGC</span></span><br><span class="line">	k, err := createAndInitKubelet(<span class="comment">/* ... */</span>)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">"failed to create kubelet: %v"</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// NewMainKubelet should have set up a pod source config if one didn't exist</span></span><br><span class="line">	<span class="comment">// when the builder was run. This is just a precaution.</span></span><br><span class="line">	<span class="keyword">if</span> kubeDeps.PodConfig == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">"failed to create kubelet, pod source config was nil"</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	podCfg := kubeDeps.PodConfig</span><br><span class="line"></span><br><span class="line">	rlimit.RlimitNumFiles(<span class="keyword">uint64</span>(kubeServer.MaxOpenFiles))</span><br><span class="line"></span><br><span class="line">	<span class="comment">// process pods and exit.</span></span><br><span class="line">	<span class="keyword">if</span> runOnce &#123;</span><br><span class="line">		<span class="keyword">if</span> _, err := k.RunOnce(podCfg.Updates()); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">"runonce failed: %v"</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		klog.Info(<span class="string">"Started kubelet as runonce"</span>)</span><br><span class="line">	&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">		startKubelet(k, podCfg, &amp;kubeServer.KubeletConfiguration, kubeDeps, kubeServer.EnableCAdvisorJSONEndpoints, kubeServer.EnableServer)</span><br><span class="line">		klog.Info(<span class="string">"Started kubelet"</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="GC"><a href="#GC" class="headerlink" title="GC"></a>GC</h2><blockquote>
+<p>在<code>createAndInitKubelet(/* ... */)</code>方法中，初始化完Kubelet后，直接调用以下方法启动GC</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">StartGarbageCollection</span><span class="params">()</span></span> &#123;</span><br><span class="line">	loggedContainerGCFailure := <span class="literal">false</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.containerGC.GarbageCollect(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="comment">// 启动失败逻辑略...</span></span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="comment">// 启动成功逻辑略...</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;, ContainerGCPeriod, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// when the high threshold is set to 100, stub the image GC manager</span></span><br><span class="line">	<span class="keyword">if</span> kl.kubeletConfiguration.ImageGCHighThresholdPercent == <span class="number">100</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	prevImageGCFailed := <span class="literal">false</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.imageManager.GarbageCollect(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="comment">// 启动失败逻辑略...</span></span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="comment">// 启动成功逻辑略...</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;, ImageGCPeriod, wait.NeverStop)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="startKubelet"><a href="#startKubelet" class="headerlink" title="startKubelet"></a>startKubelet</h2><blockquote>
+<p>该函数重点关注内容：</p>
+<ol>
+<li>k.Run()</li>
+<li>k.ListenAndServe()</li>
+<li>k.ListenAndServePodResources()</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">startKubelet</span><span class="params">(k kubelet.Bootstrap, podCfg *config.PodConfig, kubeCfg *kubeletconfiginternal.KubeletConfiguration, kubeDeps *kubelet.Dependencies, enableCAdvisorJSONEndpoints, enableServer <span class="keyword">bool</span>)</span></span> &#123;</span><br><span class="line">	<span class="comment">// start the kubelet</span></span><br><span class="line">	<span class="keyword">go</span> k.Run(podCfg.Updates())</span><br><span class="line"></span><br><span class="line">	<span class="comment">// start the kubelet server</span></span><br><span class="line">	<span class="keyword">if</span> enableServer &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServe(net.ParseIP(kubeCfg.Address), <span class="keyword">uint</span>(kubeCfg.Port), kubeDeps.TLSOptions, kubeDeps.Auth, enableCAdvisorJSONEndpoints, kubeCfg.EnableDebuggingHandlers, kubeCfg.EnableContentionProfiling)</span><br><span class="line"></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> kubeCfg.ReadOnlyPort &gt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServeReadOnly(net.ParseIP(kubeCfg.Address), <span class="keyword">uint</span>(kubeCfg.ReadOnlyPort), enableCAdvisorJSONEndpoints)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> utilfeature.DefaultFeatureGate.Enabled(features.KubeletPodResources) &#123;</span><br><span class="line">		<span class="keyword">go</span> k.ListenAndServePodResources()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="k-Run"><a href="#k-Run" class="headerlink" title="k.Run()"></a>k.Run()</h3><blockquote>
+<p>该部分核心内容：</p>
+<ol>
+<li>kl.cloudResourceSyncManager.Run(wait.NeverStop) // </li>
+<li>kl.initializeModules() // 初始化不需要容器运行时启动的内部模块，注意此处启动的模块不能依赖不在这里init的模块。这里主要初始化和内容包括：  <ol>
+<li>metrics注册</li>
+<li>启动 imageManager，该方法内部启动两个协程：1. 定时刷新镜像使用时间 2. 定时更新本机镜像列表的缓存，做这些主要是为了给imageGC做依据</li>
+<li>启动 certificate manager  源码注释： 证书管理器负责成为Kubelet中证书的权威来源，并处理由于轮换而导致的更新。</li>
+<li>启动 oomWatcher  oomWatcher接收由 Cadvisor 发送的OOM 事件，并且记录OOM事件(主要作用就是记录日志)</li>
+<li>启动 resourceAnalyzer  ra.fsResourceAnalyzer.Start() , 计算并缓存已知的每个Pod的PodVolumeStats 到kubelet</li>
+</ol>
+</li>
+<li>kl.volumeManager.Run() ，启动volume管理器，主要包括：<ol>
+<li>vm.desiredStateOfWorldPopulator ，源码注释：DesiredStateOfWorldPopulator定期循环查看活动pod的列表，并确保每个pod都存在于所需的world缓存状态（如果它有卷）。它还验证处于所需状态的pod是否仍然存在，如果不存在，则删除它们。</li>
+<li>vm.reconciler ，源码注释：Reconciler运行一个周期性循环，通过触发attach、detach、mount和unmount操作，将volume的期望状态与实际状态进行协调。</li>
+<li>vm.volumePluginMgr，csiDriver Informer，csiDriver类型资源的控制循环(实际无控制逻辑，启动后使本地可以使用csDriver缓存)</li>
+</ol>
+</li>
+<li>wait.Until(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, wait.NeverStop)，同步节点状态，源码注释：如果最后一次同步有任何变化或经过足够的时间，它将节点状态同步到主节点，必要时首先注册kubelet。</li>
+<li>kl.nodeLeaseController.Run(wait.NeverStop)</li>
+<li>wait.Until(kl.updateRuntimeUp, 5*time.Second, wait.NeverStop)  源码注释：在容器运行时首次出现时初始化依赖于运行时的模块，如果状态检查失败，则返回错误。如果状态检查正常，请更新kubelet runtimeState中的容器运行时正常运行时间。<br> 6.1 kl.oneTimeInitializer.Do(kl.initializeRuntimeDependentModules)  初始化运行时依赖模块：cadvisor、containerManager、evictionManager、containerLogManager、pluginManager（增加pluginHandler并启动）、</li>
+<li>kl.initNetworkUtil()  ， 监控iptables规则，确保网络实用程序在主机上存在，网络工具包括：<ol>
+<li>NAT表中，KUBE-MARK-DROP 用于标记待删除的连接，标记的连接将放置在filter表的 INPUT/OUTPUT链上</li>
+<li>NAT表中，KUBE-MARK-MASQ 规则用于为SNAT标记连接，标记的SNAT连接将配置在nat表的POSTROUTING 链上</li>
+</ol>
+</li>
+<li>wait.Until(kl.podKiller, 1*time.Second, wait.NeverStop) 注释：如果pod未被运行，将被写入此处channel，podKiller启动goroutine来杀死从channel接收的pod。</li>
+<li>kl.statusManager.Start()，启动pod状态管理器：更新apiserver中pod的状态</li>
+<li>kl.probeManager.Start()，启动probe管理器</li>
+<li>kl.runtimeClassManager.Start(wait.NeverStop)，启动runtimeClass管理器</li>
+<li>kl.pleg.Start()    PodLifecycleEventGenerator，</li>
+<li>kl.syncLoop(updates, kl)，</li>
+</ol>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">Run</span><span class="params">(updates &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate)</span></span> &#123;</span><br><span class="line">	</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">	<span class="comment">// Start the cloud provider sync manager</span></span><br><span class="line">	<span class="keyword">if</span> kl.cloudResourceSyncManager != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">go</span> kl.cloudResourceSyncManager.Run(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := kl.initializeModules(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.KubeletSetupFailed, err.Error())</span><br><span class="line">		klog.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start volume manager</span></span><br><span class="line">	<span class="keyword">go</span> kl.volumeManager.Run(kl.sourcesReady, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> kl.kubeClient != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="comment">// Start syncing node status immediately, this may set up things the runtime needs to run.</span></span><br><span class="line">		<span class="keyword">go</span> wait.Until(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, wait.NeverStop)</span><br><span class="line">		<span class="keyword">go</span> kl.fastStatusUpdateOnce()</span><br><span class="line"></span><br><span class="line">		<span class="comment">// start syncing lease</span></span><br><span class="line">		<span class="keyword">go</span> kl.nodeLeaseController.Run(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">go</span> wait.Until(kl.updateRuntimeUp, <span class="number">5</span>*time.Second, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Set up iptables util rules</span></span><br><span class="line">	<span class="keyword">if</span> kl.makeIPTablesUtilChains &#123;</span><br><span class="line">		kl.initNetworkUtil()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start a goroutine responsible for killing pods (that are not properly</span></span><br><span class="line">	<span class="comment">// handled by pod workers).</span></span><br><span class="line">	<span class="keyword">go</span> wait.Until(kl.podKiller, <span class="number">1</span>*time.Second, wait.NeverStop)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start component sync loops.</span></span><br><span class="line">	kl.statusManager.Start()</span><br><span class="line">	kl.probeManager.Start()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start syncing RuntimeClasses if enabled.</span></span><br><span class="line">	<span class="keyword">if</span> kl.runtimeClassManager != <span class="literal">nil</span> &#123;</span><br><span class="line">		kl.runtimeClassManager.Start(wait.NeverStop)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Start the pod lifecycle event generator.</span></span><br><span class="line">	kl.pleg.Start()</span><br><span class="line">	kl.syncLoop(updates, kl)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="kubelet-pleg-Start"><a href="#kubelet-pleg-Start" class="headerlink" title="kubelet.pleg.Start"></a>kubelet.pleg.Start</h4><blockquote>
+<p>PLEG （podLifeEventGenerator，在指定的时间间隔后列出pod/containers，对比他们并生成相应事件）核心逻辑：</p>
+<ol>
+<li>通过 kubecontainer.Runtime接口获取pods（实时从底层容器服务查询的容器信息，经过封装变成简单的pod对象），此处pod非k8s资源中的Pod，此处pod数据简单，只包含一组container，没有Pod资源那么多属性。(rpc调用链[使用默认容器运行时docker]：runtime-&gt;dockershim-&gt;dockerd)</li>
+<li>比较新旧pods，根据containerState是否发生变化来生成对应的event</li>
+<li>遍历event，并将事件发送到eventChannel，中间夹杂着ReInspect的逻辑</li>
+</ol>
+<p>最后，eventChannel 这个channel是在 kubelet.Run-&gt;kubelet.syncLoop 中被消费</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Start spawns a goroutine to relist periodically.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *GenericPLEG)</span> <span class="title">Start</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">go</span> wait.Until(g.relist, g.relistPeriod, wait.NeverStop)</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// relist queries the container runtime for list of pods/containers, compare</span></span><br><span class="line"><span class="comment">// with the internal pods/containers, and generates events accordingly.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *GenericPLEG)</span> <span class="title">relist</span><span class="params">()</span></span> &#123;</span><br><span class="line">	klog.V(<span class="number">5</span>).Infof(<span class="string">"GenericPLEG: Relisting"</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> lastRelistTime := g.getRelistTime(); !lastRelistTime.IsZero() &#123;</span><br><span class="line">		metrics.PLEGRelistInterval.Observe(metrics.SinceInSeconds(lastRelistTime))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	timestamp := g.clock.Now()</span><br><span class="line">	<span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		metrics.PLEGRelistDuration.Observe(metrics.SinceInSeconds(timestamp))</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 1. </span></span><br><span class="line">	podList, err := g.runtime.GetPods(<span class="literal">true</span>)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		klog.Errorf(<span class="string">"GenericPLEG: Unable to retrieve pods: %v"</span>, err)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	</span><br><span class="line">	g.updateRelistTime(timestamp)</span><br><span class="line">	</span><br><span class="line">	pods := kubecontainer.Pods(podList)</span><br><span class="line">	<span class="comment">// update running pod and container count</span></span><br><span class="line">	updateRunningPodAndContainerMetrics(pods)</span><br><span class="line">	g.podRecords.setCurrent(pods)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 2. 比较新旧pods，并生成podLifecycleEvent</span></span><br><span class="line">	eventsByPodID := <span class="keyword">map</span>[types.UID][]*PodLifecycleEvent&#123;&#125;</span><br><span class="line">	<span class="keyword">for</span> pid := <span class="keyword">range</span> g.podRecords &#123;</span><br><span class="line">		oldPod := g.podRecords.getOld(pid)</span><br><span class="line">		pod := g.podRecords.getCurrent(pid)</span><br><span class="line">		<span class="comment">// Get all containers in the old and the new pod.</span></span><br><span class="line">		allContainers := getContainersFromPods(oldPod, pod)</span><br><span class="line">		<span class="keyword">for</span> _, container := <span class="keyword">range</span> allContainers &#123;</span><br><span class="line">			events := computeEvents(oldPod, pod, &amp;container.ID)</span><br><span class="line">			<span class="keyword">for</span> _, e := <span class="keyword">range</span> events &#123;</span><br><span class="line">				updateEvents(eventsByPodID, e)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> needsReinspection <span class="keyword">map</span>[types.UID]*kubecontainer.Pod</span><br><span class="line">	<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">		needsReinspection = <span class="built_in">make</span>(<span class="keyword">map</span>[types.UID]*kubecontainer.Pod)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 3.</span></span><br><span class="line">	<span class="keyword">for</span> pid, events := <span class="keyword">range</span> eventsByPodID &#123;</span><br><span class="line">		pod := g.podRecords.getCurrent(pid)</span><br><span class="line">		<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">			</span><br><span class="line">			<span class="keyword">if</span> err := g.updateCache(pod, pid); err != <span class="literal">nil</span> &#123;</span><br><span class="line">				<span class="comment">// Rely on updateCache calling GetPodStatus to log the actual error.</span></span><br><span class="line">				klog.V(<span class="number">4</span>).Infof(<span class="string">"PLEG: Ignoring events for pod %s/%s: %v"</span>, pod.Name, pod.Namespace, err)</span><br><span class="line">				needsReinspection[pid] = pod</span><br><span class="line"></span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				<span class="built_in">delete</span>(g.podsToReinspect, pid)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// Update the internal storage and send out the events.</span></span><br><span class="line">		g.podRecords.update(pid)</span><br><span class="line">		<span class="keyword">for</span> i := <span class="keyword">range</span> events &#123;</span><br><span class="line">			<span class="comment">// Filter out events that are not reliable and no other components use yet.</span></span><br><span class="line">			<span class="keyword">if</span> events[i].Type == ContainerChanged &#123;</span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">select</span> &#123;</span><br><span class="line">			<span class="keyword">case</span> g.eventChannel &lt;- events[i]:</span><br><span class="line">			<span class="keyword">default</span>:</span><br><span class="line">				metrics.PLEGDiscardEvents.Inc()</span><br><span class="line">				klog.Error(<span class="string">"event channel is full, discard this relist() cycle event"</span>)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> g.cacheEnabled() &#123;</span><br><span class="line">		<span class="comment">// reinspect any pods that failed inspection during the previous relist</span></span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(g.podsToReinspect) &gt; <span class="number">0</span> &#123;</span><br><span class="line">			klog.V(<span class="number">5</span>).Infof(<span class="string">"GenericPLEG: Reinspecting pods that previously failed inspection"</span>)</span><br><span class="line">			<span class="keyword">for</span> pid, pod := <span class="keyword">range</span> g.podsToReinspect &#123;</span><br><span class="line">				<span class="keyword">if</span> err := g.updateCache(pod, pid); err != <span class="literal">nil</span> &#123;</span><br><span class="line">					<span class="comment">// Rely on updateCache calling GetPodStatus to log the actual error.</span></span><br><span class="line">					klog.V(<span class="number">5</span>).Infof(<span class="string">"PLEG: pod %s/%s failed reinspection: %v"</span>, pod.Name, pod.Namespace, err)</span><br><span class="line">					needsReinspection[pid] = pod</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// Update the cache timestamp.  This needs to happen *after*</span></span><br><span class="line">		<span class="comment">// all pods have been properly updated in the cache.</span></span><br><span class="line">		g.cache.UpdateTime(timestamp)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// make sure we retain the list of pods that need reinspecting the next time relist is called</span></span><br><span class="line">	g.podsToReinspect = needsReinspection</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="kubelet-syncLoop"><a href="#kubelet-syncLoop" class="headerlink" title="kubelet.syncLoop"></a>kubelet.syncLoop</h4><figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="comment">// syncLoop是处理pod变化的主循环，它主要从3个地方接收pod变化事件(file,apiserver,http)，对于任一变化事件，该循环将同步当前状态与期望状态，无事件则按照设置的周期来定期同步。</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">syncLoop</span><span class="params">(updates &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate, handler SyncHandler)</span></span> &#123;</span><br><span class="line">	klog.Info(<span class="string">"Starting kubelet main sync loop."</span>)</span><br><span class="line">	syncTicker := time.NewTicker(time.Second)</span><br><span class="line">	<span class="keyword">defer</span> syncTicker.Stop()</span><br><span class="line">	housekeepingTicker := time.NewTicker(housekeepingPeriod)</span><br><span class="line">	<span class="keyword">defer</span> housekeepingTicker.Stop()</span><br><span class="line">	plegCh := kl.pleg.Watch()</span><br><span class="line">	<span class="keyword">const</span> (</span><br><span class="line">		base   = <span class="number">100</span> * time.Millisecond</span><br><span class="line">		max    = <span class="number">5</span> * time.Second</span><br><span class="line">		factor = <span class="number">2</span></span><br><span class="line">	)</span><br><span class="line">	duration := base</span><br><span class="line">	<span class="keyword">if</span> kl.dnsConfigurer != <span class="literal">nil</span> &amp;&amp; kl.dnsConfigurer.ResolverConfig != <span class="string">""</span> &#123;</span><br><span class="line">		kl.dnsConfigurer.CheckLimitsForResolvConf()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">if</span> err := kl.runtimeState.runtimeErrors(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			klog.Errorf(<span class="string">"skipping pod synchronization - %v"</span>, err)</span><br><span class="line">			<span class="comment">// exponential backoff</span></span><br><span class="line">			time.Sleep(duration)</span><br><span class="line">			duration = time.Duration(math.Min(<span class="keyword">float64</span>(max), factor*<span class="keyword">float64</span>(duration)))</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// reset backoff if we have a success</span></span><br><span class="line">		duration = base</span><br><span class="line"></span><br><span class="line">		kl.syncLoopMonitor.Store(kl.clock.Now())</span><br><span class="line">		<span class="keyword">if</span> !kl.syncLoopIteration(updates, handler, syncTicker.C, housekeepingTicker.C, plegCh) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		kl.syncLoopMonitor.Store(kl.clock.Now())</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// syncLoop核心逻辑：</span></span><br><span class="line"><span class="comment">// 执行事件源: </span></span><br><span class="line"><span class="comment">// 1. configCh 外部其他协程写入podUpdate对象 </span></span><br><span class="line"><span class="comment">//     此时根据podUpdate事件Op类型来执行相应的handler： ADD,UPDATE,REMOVE,RECONCILE,DELETE</span></span><br><span class="line"><span class="comment">// 2. plegCh被写入对象(pleg协程) </span></span><br><span class="line"><span class="comment">//     调用 handler.sync，如果容器挂掉，则执行容器清理程序</span></span><br><span class="line"><span class="comment">// 3. 同步周期时间到 </span></span><br><span class="line"><span class="comment">//     调用handler.sync</span></span><br><span class="line"><span class="comment">// 4. 存活检查mng接收到事件</span></span><br><span class="line"><span class="comment">//     调用handler.sync</span></span><br><span class="line"><span class="comment">// 5. housekeepingCh 周期到达</span></span><br><span class="line"><span class="comment">//     </span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">syncLoopIteration</span><span class="params">(configCh &lt;-<span class="keyword">chan</span> kubetypes.PodUpdate, handler SyncHandler,</span></span></span><br><span class="line"><span class="function"><span class="params">	syncCh &lt;-<span class="keyword">chan</span> time.Time, housekeepingCh &lt;-<span class="keyword">chan</span> time.Time, plegCh &lt;-<span class="keyword">chan</span> *pleg.PodLifecycleEvent)</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> u, open := &lt;-configCh:</span><br><span class="line">		<span class="keyword">if</span> !open &#123;</span><br><span class="line">			klog.Errorf(<span class="string">"Update channel is closed. Exiting the sync loop."</span>)</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">switch</span> u.Op &#123;</span><br><span class="line">		<span class="keyword">case</span> kubetypes.ADD:</span><br><span class="line">			handler.HandlePodAdditions(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.UPDATE:</span><br><span class="line">			handler.HandlePodUpdates(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.REMOVE:</span><br><span class="line">			handler.HandlePodRemoves(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.RECONCILE:</span><br><span class="line">			handler.HandlePodReconcile(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.DELETE:</span><br><span class="line">			<span class="comment">// DELETE is treated as a UPDATE because of graceful deletion.</span></span><br><span class="line">			handler.HandlePodUpdates(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.RESTORE:</span><br><span class="line">			<span class="comment">// These are pods restored from the checkpoint. Treat them as new pods.</span></span><br><span class="line">			handler.HandlePodAdditions(u.Pods)</span><br><span class="line">		<span class="keyword">case</span> kubetypes.SET:</span><br><span class="line">			<span class="comment">// <span class="doctag">TODO:</span> Do we want to support this?</span></span><br><span class="line">			klog.Errorf(<span class="string">"Kubelet does not support snapshot update"</span>)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> u.Op != kubetypes.RESTORE &#123;</span><br><span class="line">			kl.sourcesReady.AddSource(u.Source)</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> e := &lt;-plegCh:</span><br><span class="line">		<span class="keyword">if</span> isSyncPodWorthy(e) &#123;</span><br><span class="line">			<span class="comment">// PLEG event for a pod; sync it.</span></span><br><span class="line">			<span class="keyword">if</span> pod, ok := kl.podManager.GetPodByUID(e.ID); ok &#123;</span><br><span class="line">				handler.HandlePodSyncs([]*v1.Pod&#123;pod&#125;)</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				<span class="comment">// If the pod no longer exists, ignore the event.</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> e.Type == pleg.ContainerDied &#123;</span><br><span class="line">			<span class="keyword">if</span> containerID, ok := e.Data.(<span class="keyword">string</span>); ok &#123;</span><br><span class="line">				kl.cleanUpContainersInPod(e.ID, containerID)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-syncCh:</span><br><span class="line">		<span class="comment">// Sync pods waiting for sync</span></span><br><span class="line">		podsToSync := kl.getPodsToSync()</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(podsToSync) == <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		handler.HandlePodSyncs(podsToSync)</span><br><span class="line">	<span class="keyword">case</span> update := &lt;-kl.livenessManager.Updates():</span><br><span class="line">		<span class="keyword">if</span> update.Result == proberesults.Failure &#123;</span><br><span class="line">			pod, ok := kl.podManager.GetPodByUID(update.PodUID)</span><br><span class="line">			<span class="keyword">if</span> !ok &#123;</span><br><span class="line">				<span class="comment">// If the pod no longer exists, ignore the update.</span></span><br><span class="line">				<span class="keyword">break</span></span><br><span class="line">			&#125;</span><br><span class="line">			handler.HandlePodSyncs([]*v1.Pod&#123;pod&#125;)</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-housekeepingCh:</span><br><span class="line">		<span class="keyword">if</span> !kl.sourcesReady.AllReady() &#123;</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="keyword">if</span> err := handler.HandlePodCleanups(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">				klog.Errorf(<span class="string">"Failed cleaning pods: %v"</span>, err)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s源码阅读</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s源码阅读</tag>
+        <tag>kubelet</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>k8s特性03 —— 自定义资源-2</title>
+    <url>/blog/2020/06/17/20220717221310.html</url>
+    <content><![CDATA[]]></content>
+      <categories>
+        <category>k8s</category>
+        <category>k8s特性</category>
+      </categories>
+      <tags>
+        <tag>k8s</tag>
+        <tag>k8s特性</tag>
+        <tag>自定义资源</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>k8s特性03 —— 自定义资源</title>
     <url>/blog/2020/06/17/20200617221310.html</url>
     <content><![CDATA[<h1 id="K8S自定义资源"><a href="#K8S自定义资源" class="headerlink" title="K8S自定义资源"></a>K8S自定义资源</h1><p>K8S 中可以实现自定义资源类型，它是K8S API的一种扩展。K8S中自定义的资源类型可以动态注册和销毁，当用户创建一个自定义资源类型后，用户可以通过使用<code>kubectl</code>命令来创建该类型资源，操作同内置资源对象无异。</p>
@@ -395,17 +593,73 @@
 </ol>
 <p>三者协作： mcache是P私有且无锁的内存，当协程需要内存数据时，直接从mcache上找到指定规格的mspan，并将数据存入mspan。当mspan为空(初始为空)或已满时，向mcentral申请该规格的mspan，mcentral根据自身情况，有空闲则返回，无空间则从mheap中申请，mheap则根据自身是否由空间来决定返回自身空闲空间或者向OS申请资源。</p>
 </blockquote>
+<h3 id="mheap"><a href="#mheap" class="headerlink" title="mheap"></a>mheap</h3><blockquote>
+<p>主要成员：</p>
+<ol>
+<li>arenas [][]heapArena</li>
+<li>allspans []mspan</li>
+<li>central []mcentral</li>
+</ol>
+</blockquote>
+<h4 id="arenas"><a href="#arenas" class="headerlink" title="arenas"></a>arenas</h4><blockquote>
+<p>类型为<code>heapArena</code>的二元数组，主要数据结构为：</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> heapArena <span class="keyword">struct</span> &#123;</span><br><span class="line">	bitmap [heapArenaBitmapBytes]<span class="keyword">byte</span></span><br><span class="line">	spans [pagesPerArena]*mspan</span><br><span class="line">    pageInUse [pagesPerArena / <span class="number">8</span>]<span class="keyword">uint8</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<ol>
+<li><code>spans</code>成员变量保存了该<code>heapArena</code>中的mspan，该变量长度为 <code>heapArena大小/areaPageSize</code>。<br>某个page未被mspan使用时，它的值为nil，被使用时，则该page对应的索引值即为被使用的mspan的指针(当一个mspan使用多个page时，多个page索引对应值均为该mspan指针)。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB=8K=1024</li>
+<li><code>pageInUse</code>成员变量标记了该<code>arena</code>中哪些page被使用，哪些未被使用，使用位图标记，所以<code>数组长度=pagesPerArena/8=heapArena大小/areaPageSize/8</code>。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB/8=1K=1024</li>
+<li><code>bitmap</code>位图标记单位是<code>words</code>(arena中所有的words)，又因为bitmap中每2个bit表示一个<code>words</code>的2个属性(pointer/scalar)，所以<code>bitmap</code>数组长度应是 <code>heapArenaBytes/(len(words)*8/2)</code>即<code>arena字节数/words字节数/8*2</code>。<br>以linux 64位为例，arenaSize是64MB，则bitmap长度是 64MB/8B/8<em>2=2M 即 2</em>1024*1024</li>
+</ol>
+</blockquote>
+<h4 id="allspans"><a href="#allspans" class="headerlink" title="allspans"></a>allspans</h4><blockquote>
+<p>顾名思义，存放着所有的mspan</p>
+</blockquote>
+<h4 id="central"><a href="#central" class="headerlink" title="central"></a>central</h4><blockquote>
+<p><code>heap.central</code>变量是一个数组，数组长度136(0/1表示大对象)，表示67种规格的<code>mcentral</code>对象(数组一半表示带指针，一半表示不带指针，区分主要是为了gc方便)</p>
+</blockquote>
+<h3 id="mcentral"><a href="#mcentral" class="headerlink" title="mcentral"></a>mcentral</h3><figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> mcentral <span class="keyword">struct</span>&#123;</span><br><span class="line">    spanclass spanClass</span><br><span class="line">    partial [<span class="number">2</span>]spanSet <span class="comment">// list of spans with a free object 2个spanSet，一个是未sweep过,一个是sweep过的，下同</span></span><br><span class="line">    full    [<span class="number">2</span>]spanSet <span class="comment">// list of spans with no free objects</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// mcentral main func:</span></span><br><span class="line"><span class="comment">//    cacheSpan()*mspan</span></span><br><span class="line"><span class="comment">//    uncacheSpan(s *mspan)</span></span><br><span class="line"><span class="comment">//    grow() *mspan</span></span><br><span class="line"><span class="comment">//    其他sweep相关</span></span><br></pre></td></tr></table></figure>
+<h4 id="mcentral成员变量"><a href="#mcentral成员变量" class="headerlink" title="mcentral成员变量"></a>mcentral成员变量</h4><blockquote>
+<ol>
+<li><code>spanclass</code> 表明了该<code>mcentral</code>对象的规格</li>
+<li><code>partial</code> 表示仍有空间可使用的<code>mspan</code>对象</li>
+<li><code>full</code> 表示无空间可用的<code>mspan</code>对象</li>
+</ol>
+</blockquote>
+<h4 id="mcentral核心方法"><a href="#mcentral核心方法" class="headerlink" title="mcentral核心方法"></a>mcentral核心方法</h4><blockquote>
+<ol>
+<li>cacheSpan(): 分配一个<code>mspan</code>对象给<code>mcache</code>(P上管理<code>mspan</code>的对象)用。<br>分配过程找可用的<code>mspan</code>顺序：<br>① 从<code>partial</code>变量中sweep过的列表里找到一个有空闲的，如果有使用该<code>mspan</code>如果无则继续。<br>② 从<code>partial</code>变量中未sweep过的列表里找到一个<code>mspan</code>并清理它，如果有使用该<code>mspan</code>如果无则继续。<br>③ 从<code>full</code>变量中未sweep过的列表中找到一个<code>mspan</code>并清理它，清理后可用则使用它，如果无则继续。<br>④ 以上三个过程都未找到可用<code>mspan</code>则调用<code>mcentral.grow()</code>方法，申请空间</li>
+<li>uncacheSpan(): 从<code>mcache</code>中拿走一个<code>mspan</code>，根据其gc阶段放到对应的<code>spanSet</code>中</li>
+<li>grow(): 从<code>heap</code>分配一个新的空的<code>mspan</code>并按照<code>mcentral.spanclass</code>规格将其初始化。核心调用链<code>-&gt; mheap_.alloc -&gt; mheap_.allocSpan</code></li>
+</ol>
+</blockquote>
+<h3 id="mcache"><a href="#mcache" class="headerlink" title="mcache"></a>mcache</h3><blockquote>
+<p>小对象线程(GMP模型中的P)私有的的cache，因为是线程独享的所以访问时无需加锁。<br><code>mcache</code>对象自身不在堆上(资源未托管给go的GC做清理)，因此该对象中涉及到堆上的指针时需要特殊处理。</p>
+</blockquote>
+<blockquote>
+<p><code>mcache</code>主要成员变量:</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> mcache <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// 微小对象分配使用</span></span><br><span class="line">	tiny       <span class="keyword">uintptr</span> <span class="comment">// 指向当前微小对象可用的块(如果无，则为nil)，它指向的是堆上内存地址，所以在p标记为终结时，会在 releaseAll 中处理它</span></span><br><span class="line">	<span class="comment">// 微小对象在mspan中单个块的偏移量</span></span><br><span class="line">    <span class="comment">// 不同规格的mspan单个块大小不一样，在linux 64位os下，微小对象使用的规格class=2，单个块大小是16byte</span></span><br><span class="line">    <span class="comment">// 当给微小对象分配空间时，如果是需要 2byte，如果当前块中能够容下，则offset+=2，如果不能，tiny指针会找到并指向下一个块</span></span><br><span class="line">    tinyoffset <span class="keyword">uintptr</span> </span><br><span class="line">	tinyAllocs <span class="keyword">uintptr</span> <span class="comment">// 计数</span></span><br><span class="line">    <span class="comment">// mcache中所有规格的mspan</span></span><br><span class="line">    <span class="comment">// 规格数是 67，但是区分了是否带指针</span></span><br><span class="line">    <span class="comment">// 另外0、1表示大对象，所以数组实际长度是2+67*2=136</span></span><br><span class="line">	alloc [numSpanClasses]*mspan <span class="comment">// spans to allocate from, indexed by spanClass</span></span><br><span class="line">	stackcache [_NumStackOrders]stackfreelist</span><br><span class="line">    <span class="comment">// 表示上次刷新次mcache时的sweepGen</span></span><br><span class="line">    <span class="comment">// 如果 flushGen!=mheap_.sweepgen，说明该mcache中的span是过时的，需要刷新span才能进行扫描。</span></span><br><span class="line">    <span class="comment">// 这个过程是在acquirep中完成的</span></span><br><span class="line">	flushGen <span class="keyword">uint32</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p><code>mcache</code>中主要成员方法</p>
+<ol>
+<li>nextFree(spc spanclass) 从当前<code>mcache</code>中找到规格为<code>spc</code>的有空闲的<code>mspan</code>，如果没有返回空（上层会调用<code>refill</code>方法）</li>
+<li>refill(spc spanclass) 将当前<code>mcache</code>中规格为<code>spc</code>的<code>mspan</code>放到对应<code>mcentral</code>中，并从中拿到一个可用的<code>mspan</code>给<code>mcache</code></li>
+<li>allocLarge() 大对象分配时调用，直接通过<code>mheap_.alloc</code>从堆中分配</li>
+<li>releaseAll() 释放所有<code>mspan</code>对象给<code>mheap.central</code>，主要是在<code>P</code>终结时调用</li>
+</ol>
+</blockquote>
 <h2 id="内存管理中的重要对象"><a href="#内存管理中的重要对象" class="headerlink" title="内存管理中的重要对象"></a>内存管理中的重要对象</h2><blockquote>
 <ol>
 <li>mheap_，mheap的实例对象。</li>
-<li>mheap_.mcentral[i] ，是具体mcentral的一个实例，mheap_.mcentral长度为134（67种规格×2是否带指针）。mheap_.mcentral[i]里负责存放全局的i规格内存和管理他们的申请与释放。</li>
+<li>mheap_.mcentral[i] ，是具体mcentral的一个实例，mheap_.mcentral长度为136（67种规格×2是否带指针+2表示大对象）。mheap_.mcentral[i]里负责存放全局的i规格内存和管理他们的申请与释放。</li>
 <li>p.mcache[i]，<code>P</code>上缓存内存示例，其也是一个数组，长度也为134。当p.mcache[i]为空或满时，需要申请内存就向mheap_.mcentral[i]申请。</li>
 <li>mspan，mcache、mcentral管理的内存单元。每次申请或者清理都是以mspan大小的单位，mspan具有规格属性，不同规格的mspan其大小及存放该规格数据的数量也都不尽相同。</li>
 <li>mheap_.arenas[i][j]， 数据类型为heapArena，该对象主要属性：bitmap[],spans[],pageInUse,pageMarks,zeroedBase，网上很多讲go内存管理都会提到，go内存分为3部分，spans,bitmap,arena其中，arena指的就是mheap_.arenas中描述的所有内存大小，bitmap指的便是这里的属性bitmap[]，spans指的便是这里的spans[]，bitmap[]是字节数组，每个字节有8bit，可以用来表示4字节的内存使用情况以及gc标志，spans[]是指针数组，每个指针大小为8byte,指向一个mspan。关于说堆最大512G的说法是错误的，在linux 的go1.14中，arenas[i][j].bitmap[]大小是2MB，2MB一共是2 * 1024 * 1024 * 8 bit可以表示 8 * 1024 * 1024个地址位信息即 8M * 8byte = 64MB信息，arena数组大小是 1 * 4M,所以理论上，arenas堆空间最大内存为64MB * 4M = 256TB，bitmap占空间大小为 2MB * 4M = 8TB；spans占内存大小为 8K(数组长度) * 8B(数组指针元素8B) = 64KB(spans可表示内存:8K * 8KB(页大小)=64MB,64MB * 4M(arenas数组大小)=256TB 这与通过bitmap计算出的结果是一致的)</li>
 </ol>
 </blockquote>
 <h2 id="架构简图"><a href="#架构简图" class="headerlink" title="架构简图"></a>架构简图</h2><blockquote>
-<p><img src="/resources/post_pic/2020/05/mem01.jpg" alt="go内存管理" title="go内存管理"></p>
+<p>注：该图基于Go1.14画的，本文更新后很多内容是基于新版本Go1.16的。其中<code>mcentral</code>成员变量<code>empty</code> <code>noempty</code>对应到新版本是：<code>partial</code> <code>full</code><br><img src="/resources/post_pic/2020/05/mem01.jpg" alt="go内存管理" title="go内存管理"></p>
 </blockquote>
 <h1 id="堆对象空间分配"><a href="#堆对象空间分配" class="headerlink" title="堆对象空间分配"></a>堆对象空间分配</h1><blockquote>
 <p>堆对象分配的主要逻辑在 <code>runtime/malloc.go</code>中的 <code>mallocgc()</code> 函数</p>
@@ -1015,6 +1269,26 @@ cannot allocate tty if runc will detach without setting console socket</code></p
     <title>k8s源码阅读02——apiserver</title>
     <url>/blog/2019/12/01/20191201215410.html</url>
     <content><![CDATA[<h1 id="整体："><a href="#整体：" class="headerlink" title="整体："></a>整体：</h1><p>TODO: webhook中使用service方式时，apiserver的pod使用hostNetwork，实际是无法解析service fqdn域名的，那么，在apiserver中是如何正确地请求到webhook的。</p>
+<blockquote>
+<p>apiExtensionsServer<br>apiServer     -&gt; DefaultBuildHandlerChain(增加request的filter) -&gt; installAPI<br>aggregatorAPi<br>v1.19.0 scheduling资源</p>
+</blockquote>
+<blockquote>
+<p>handler pkg/registry/</p>
+</blockquote>
+<blockquote>
+<p>filter: vendor/k8s.io/apiserver/pkg/server/config.go DefaultBuildHandlerChain</p>
+</blockquote>
+<blockquote>
+<p>apiInstaller : vendor/k8s.io/apiserver/pkg/endpoints/install.go   APIInstaller.Install()</p>
+</blockquote>
+<blockquote>
+<p>apiGroup (/apis/apps等) 逻辑 vendor/k8s.io/kube-aggregate/pkg/apiserver/handler_apis.go apiGroupHandler.ServeHTTP</p>
+</blockquote>
+<p>k8s filter：</p>
+<p>withPanicRecovery<br>withCacheControl<br>withWarningRecorder<br>withAuditAnnotations<br>withRequestInfo<br>withWaitGroup<br>WithTimeoutForNonLongRunningRequests 客户端请求超时机制实现<br>WithCORS<br>WithAuthentication  身份验证<br>WithAudit               审计<br>WithImpersonation<br>WithAuthorization   授权</p>
+<p>认证<br>authentication注册： pkg/kubeapiserver/options/authentication.go BuiltInAuthenticationOptions.ApplyTo() -&gt; authenticatorConfig.New()</p>
+<p>授权<br>Authorizer注册：<br>cmd/kube-apiserver/app/server.go    buildGenericConfig().BuildAuthorizer()<br> |<br> pkg/kubeapiserver/authorizer/config.go New()</p>
+<p>准入控制<br>admissionPlugin注册： pkg/kubeapiserver/options/admissions.go  NewAdmissionOptions() 先注册mutating/validating，再注册buildin<br>cmd/kube-apiserver/app/server.go    buildGenericConfig().(Admission.ApplyTo())</p>
 ]]></content>
       <categories>
         <category>k8s</category>

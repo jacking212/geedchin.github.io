@@ -113,17 +113,73 @@
 </ol>
 <p>三者协作： mcache是P私有且无锁的内存，当协程需要内存数据时，直接从mcache上找到指定规格的mspan，并将数据存入mspan。当mspan为空(初始为空)或已满时，向mcentral申请该规格的mspan，mcentral根据自身情况，有空闲则返回，无空间则从mheap中申请，mheap则根据自身是否由空间来决定返回自身空闲空间或者向OS申请资源。</p>
 </blockquote>
+<h3 id="mheap"><a href="#mheap" class="headerlink" title="mheap"></a>mheap</h3><blockquote>
+<p>主要成员：</p>
+<ol>
+<li>arenas [][]heapArena</li>
+<li>allspans []mspan</li>
+<li>central []mcentral</li>
+</ol>
+</blockquote>
+<h4 id="arenas"><a href="#arenas" class="headerlink" title="arenas"></a>arenas</h4><blockquote>
+<p>类型为<code>heapArena</code>的二元数组，主要数据结构为：</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> heapArena <span class="keyword">struct</span> &#123;</span><br><span class="line">	bitmap [heapArenaBitmapBytes]<span class="keyword">byte</span></span><br><span class="line">	spans [pagesPerArena]*mspan</span><br><span class="line">    pageInUse [pagesPerArena / <span class="number">8</span>]<span class="keyword">uint8</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<ol>
+<li><code>spans</code>成员变量保存了该<code>heapArena</code>中的mspan，该变量长度为 <code>heapArena大小/areaPageSize</code>。<br>某个page未被mspan使用时，它的值为nil，被使用时，则该page对应的索引值即为被使用的mspan的指针(当一个mspan使用多个page时，多个page索引对应值均为该mspan指针)。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB=8K=1024</li>
+<li><code>pageInUse</code>成员变量标记了该<code>arena</code>中哪些page被使用，哪些未被使用，使用位图标记，所以<code>数组长度=pagesPerArena/8=heapArena大小/areaPageSize/8</code>。<br>以linux 64位为例，areaPageSize是8KB，arenaSize是64MB、所以该变量长度为 64MB/8KB/8=1K=1024</li>
+<li><code>bitmap</code>位图标记单位是<code>words</code>(arena中所有的words)，又因为bitmap中每2个bit表示一个<code>words</code>的2个属性(pointer/scalar)，所以<code>bitmap</code>数组长度应是 <code>heapArenaBytes/(len(words)*8/2)</code>即<code>arena字节数/words字节数/8*2</code>。<br>以linux 64位为例，arenaSize是64MB，则bitmap长度是 64MB/8B/8<em>2=2M 即 2</em>1024*1024</li>
+</ol>
+</blockquote>
+<h4 id="allspans"><a href="#allspans" class="headerlink" title="allspans"></a>allspans</h4><blockquote>
+<p>顾名思义，存放着所有的mspan</p>
+</blockquote>
+<h4 id="central"><a href="#central" class="headerlink" title="central"></a>central</h4><blockquote>
+<p><code>heap.central</code>变量是一个数组，数组长度136(0/1表示大对象)，表示67种规格的<code>mcentral</code>对象(数组一半表示带指针，一半表示不带指针，区分主要是为了gc方便)</p>
+</blockquote>
+<h3 id="mcentral"><a href="#mcentral" class="headerlink" title="mcentral"></a>mcentral</h3><figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> mcentral <span class="keyword">struct</span>&#123;</span><br><span class="line">    spanclass spanClass</span><br><span class="line">    partial [<span class="number">2</span>]spanSet <span class="comment">// list of spans with a free object 2个spanSet，一个是未sweep过,一个是sweep过的，下同</span></span><br><span class="line">    full    [<span class="number">2</span>]spanSet <span class="comment">// list of spans with no free objects</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// mcentral main func:</span></span><br><span class="line"><span class="comment">//    cacheSpan()*mspan</span></span><br><span class="line"><span class="comment">//    uncacheSpan(s *mspan)</span></span><br><span class="line"><span class="comment">//    grow() *mspan</span></span><br><span class="line"><span class="comment">//    其他sweep相关</span></span><br></pre></td></tr></table></figure>
+<h4 id="mcentral成员变量"><a href="#mcentral成员变量" class="headerlink" title="mcentral成员变量"></a>mcentral成员变量</h4><blockquote>
+<ol>
+<li><code>spanclass</code> 表明了该<code>mcentral</code>对象的规格</li>
+<li><code>partial</code> 表示仍有空间可使用的<code>mspan</code>对象</li>
+<li><code>full</code> 表示无空间可用的<code>mspan</code>对象</li>
+</ol>
+</blockquote>
+<h4 id="mcentral核心方法"><a href="#mcentral核心方法" class="headerlink" title="mcentral核心方法"></a>mcentral核心方法</h4><blockquote>
+<ol>
+<li>cacheSpan(): 分配一个<code>mspan</code>对象给<code>mcache</code>(P上管理<code>mspan</code>的对象)用。<br>分配过程找可用的<code>mspan</code>顺序：<br>① 从<code>partial</code>变量中sweep过的列表里找到一个有空闲的，如果有使用该<code>mspan</code>如果无则继续。<br>② 从<code>partial</code>变量中未sweep过的列表里找到一个<code>mspan</code>并清理它，如果有使用该<code>mspan</code>如果无则继续。<br>③ 从<code>full</code>变量中未sweep过的列表中找到一个<code>mspan</code>并清理它，清理后可用则使用它，如果无则继续。<br>④ 以上三个过程都未找到可用<code>mspan</code>则调用<code>mcentral.grow()</code>方法，申请空间</li>
+<li>uncacheSpan(): 从<code>mcache</code>中拿走一个<code>mspan</code>，根据其gc阶段放到对应的<code>spanSet</code>中</li>
+<li>grow(): 从<code>heap</code>分配一个新的空的<code>mspan</code>并按照<code>mcentral.spanclass</code>规格将其初始化。核心调用链<code>-&gt; mheap_.alloc -&gt; mheap_.allocSpan</code></li>
+</ol>
+</blockquote>
+<h3 id="mcache"><a href="#mcache" class="headerlink" title="mcache"></a>mcache</h3><blockquote>
+<p>小对象线程(GMP模型中的P)私有的的cache，因为是线程独享的所以访问时无需加锁。<br><code>mcache</code>对象自身不在堆上(资源未托管给go的GC做清理)，因此该对象中涉及到堆上的指针时需要特殊处理。</p>
+</blockquote>
+<blockquote>
+<p><code>mcache</code>主要成员变量:</p>
+</blockquote>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> mcache <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// 微小对象分配使用</span></span><br><span class="line">	tiny       <span class="keyword">uintptr</span> <span class="comment">// 指向当前微小对象可用的块(如果无，则为nil)，它指向的是堆上内存地址，所以在p标记为终结时，会在 releaseAll 中处理它</span></span><br><span class="line">	<span class="comment">// 微小对象在mspan中单个块的偏移量</span></span><br><span class="line">    <span class="comment">// 不同规格的mspan单个块大小不一样，在linux 64位os下，微小对象使用的规格class=2，单个块大小是16byte</span></span><br><span class="line">    <span class="comment">// 当给微小对象分配空间时，如果是需要 2byte，如果当前块中能够容下，则offset+=2，如果不能，tiny指针会找到并指向下一个块</span></span><br><span class="line">    tinyoffset <span class="keyword">uintptr</span> </span><br><span class="line">	tinyAllocs <span class="keyword">uintptr</span> <span class="comment">// 计数</span></span><br><span class="line">    <span class="comment">// mcache中所有规格的mspan</span></span><br><span class="line">    <span class="comment">// 规格数是 67，但是区分了是否带指针</span></span><br><span class="line">    <span class="comment">// 另外0、1表示大对象，所以数组实际长度是2+67*2=136</span></span><br><span class="line">	alloc [numSpanClasses]*mspan <span class="comment">// spans to allocate from, indexed by spanClass</span></span><br><span class="line">	stackcache [_NumStackOrders]stackfreelist</span><br><span class="line">    <span class="comment">// 表示上次刷新次mcache时的sweepGen</span></span><br><span class="line">    <span class="comment">// 如果 flushGen!=mheap_.sweepgen，说明该mcache中的span是过时的，需要刷新span才能进行扫描。</span></span><br><span class="line">    <span class="comment">// 这个过程是在acquirep中完成的</span></span><br><span class="line">	flushGen <span class="keyword">uint32</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p><code>mcache</code>中主要成员方法</p>
+<ol>
+<li>nextFree(spc spanclass) 从当前<code>mcache</code>中找到规格为<code>spc</code>的有空闲的<code>mspan</code>，如果没有返回空（上层会调用<code>refill</code>方法）</li>
+<li>refill(spc spanclass) 将当前<code>mcache</code>中规格为<code>spc</code>的<code>mspan</code>放到对应<code>mcentral</code>中，并从中拿到一个可用的<code>mspan</code>给<code>mcache</code></li>
+<li>allocLarge() 大对象分配时调用，直接通过<code>mheap_.alloc</code>从堆中分配</li>
+<li>releaseAll() 释放所有<code>mspan</code>对象给<code>mheap.central</code>，主要是在<code>P</code>终结时调用</li>
+</ol>
+</blockquote>
 <h2 id="内存管理中的重要对象"><a href="#内存管理中的重要对象" class="headerlink" title="内存管理中的重要对象"></a>内存管理中的重要对象</h2><blockquote>
 <ol>
 <li>mheap_，mheap的实例对象。</li>
-<li>mheap_.mcentral[i] ，是具体mcentral的一个实例，mheap_.mcentral长度为134（67种规格×2是否带指针）。mheap_.mcentral[i]里负责存放全局的i规格内存和管理他们的申请与释放。</li>
+<li>mheap_.mcentral[i] ，是具体mcentral的一个实例，mheap_.mcentral长度为136（67种规格×2是否带指针+2表示大对象）。mheap_.mcentral[i]里负责存放全局的i规格内存和管理他们的申请与释放。</li>
 <li>p.mcache[i]，<code>P</code>上缓存内存示例，其也是一个数组，长度也为134。当p.mcache[i]为空或满时，需要申请内存就向mheap_.mcentral[i]申请。</li>
 <li>mspan，mcache、mcentral管理的内存单元。每次申请或者清理都是以mspan大小的单位，mspan具有规格属性，不同规格的mspan其大小及存放该规格数据的数量也都不尽相同。</li>
 <li>mheap_.arenas[i][j]， 数据类型为heapArena，该对象主要属性：bitmap[],spans[],pageInUse,pageMarks,zeroedBase，网上很多讲go内存管理都会提到，go内存分为3部分，spans,bitmap,arena其中，arena指的就是mheap_.arenas中描述的所有内存大小，bitmap指的便是这里的属性bitmap[]，spans指的便是这里的spans[]，bitmap[]是字节数组，每个字节有8bit，可以用来表示4字节的内存使用情况以及gc标志，spans[]是指针数组，每个指针大小为8byte,指向一个mspan。关于说堆最大512G的说法是错误的，在linux 的go1.14中，arenas[i][j].bitmap[]大小是2MB，2MB一共是2 * 1024 * 1024 * 8 bit可以表示 8 * 1024 * 1024个地址位信息即 8M * 8byte = 64MB信息，arena数组大小是 1 * 4M,所以理论上，arenas堆空间最大内存为64MB * 4M = 256TB，bitmap占空间大小为 2MB * 4M = 8TB；spans占内存大小为 8K(数组长度) * 8B(数组指针元素8B) = 64KB(spans可表示内存:8K * 8KB(页大小)=64MB,64MB * 4M(arenas数组大小)=256TB 这与通过bitmap计算出的结果是一致的)</li>
 </ol>
 </blockquote>
 <h2 id="架构简图"><a href="#架构简图" class="headerlink" title="架构简图"></a>架构简图</h2><blockquote>
-<p><img src="/resources/post_pic/2020/05/mem01.jpg" alt="go内存管理" title="go内存管理"></p>
+<p>注：该图基于Go1.14画的，本文更新后很多内容是基于新版本Go1.16的。其中<code>mcentral</code>成员变量<code>empty</code> <code>noempty</code>对应到新版本是：<code>partial</code> <code>full</code><br><img src="/resources/post_pic/2020/05/mem01.jpg" alt="go内存管理" title="go内存管理"></p>
 </blockquote>
 <h1 id="堆对象空间分配"><a href="#堆对象空间分配" class="headerlink" title="堆对象空间分配"></a>堆对象空间分配</h1><blockquote>
 <p>堆对象分配的主要逻辑在 <code>runtime/malloc.go</code>中的 <code>mallocgc()</code> 函数</p>
@@ -151,7 +207,7 @@
     
   <div id="toc" class="toc-article">
     <strong class="toc-title">目录</strong>
-    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#引言"><span class="toc-text">引言</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#内存管理中的重要组件"><span class="toc-text">内存管理中的重要组件</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#内存管理中的重要对象"><span class="toc-text">内存管理中的重要对象</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#架构简图"><span class="toc-text">架构简图</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#堆对象空间分配"><span class="toc-text">堆对象空间分配</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#微小-tiny-对象分配-0-16byte"><span class="toc-text">微小(tiny)对象分配 (0,16byte]</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#小对象分配-16byte-32kb"><span class="toc-text">小对象分配 (16byte,32kb)</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#大对象分配-32kb-∞"><span class="toc-text">大对象分配 (32kb,∞)</span></a></li></ol></li></ol>
+    <ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#引言"><span class="toc-text">引言</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#内存管理中的重要组件"><span class="toc-text">内存管理中的重要组件</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#mheap"><span class="toc-text">mheap</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#arenas"><span class="toc-text">arenas</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#allspans"><span class="toc-text">allspans</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#central"><span class="toc-text">central</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#mcentral"><span class="toc-text">mcentral</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#mcentral成员变量"><span class="toc-text">mcentral成员变量</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#mcentral核心方法"><span class="toc-text">mcentral核心方法</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#mcache"><span class="toc-text">mcache</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#内存管理中的重要对象"><span class="toc-text">内存管理中的重要对象</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#架构简图"><span class="toc-text">架构简图</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#堆对象空间分配"><span class="toc-text">堆对象空间分配</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#微小-tiny-对象分配-0-16byte"><span class="toc-text">微小(tiny)对象分配 (0,16byte]</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#小对象分配-16byte-32kb"><span class="toc-text">小对象分配 (16byte,32kb)</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#大对象分配-32kb-∞"><span class="toc-text">大对象分配 (32kb,∞)</span></a></li></ol></li></ol>
   </div>
 
 

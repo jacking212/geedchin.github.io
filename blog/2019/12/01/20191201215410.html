@@ -102,6 +102,26 @@
 
     <div class="post-content">
       <h1 id="整体："><a href="#整体：" class="headerlink" title="整体："></a>整体：</h1><p>TODO: webhook中使用service方式时，apiserver的pod使用hostNetwork，实际是无法解析service fqdn域名的，那么，在apiserver中是如何正确地请求到webhook的。</p>
+<blockquote>
+<p>apiExtensionsServer<br>apiServer     -&gt; DefaultBuildHandlerChain(增加request的filter) -&gt; installAPI<br>aggregatorAPi<br>v1.19.0 scheduling资源</p>
+</blockquote>
+<blockquote>
+<p>handler pkg/registry/</p>
+</blockquote>
+<blockquote>
+<p>filter: vendor/k8s.io/apiserver/pkg/server/config.go DefaultBuildHandlerChain</p>
+</blockquote>
+<blockquote>
+<p>apiInstaller : vendor/k8s.io/apiserver/pkg/endpoints/install.go   APIInstaller.Install()</p>
+</blockquote>
+<blockquote>
+<p>apiGroup (/apis/apps等) 逻辑 vendor/k8s.io/kube-aggregate/pkg/apiserver/handler_apis.go apiGroupHandler.ServeHTTP</p>
+</blockquote>
+<p>k8s filter：</p>
+<p>withPanicRecovery<br>withCacheControl<br>withWarningRecorder<br>withAuditAnnotations<br>withRequestInfo<br>withWaitGroup<br>WithTimeoutForNonLongRunningRequests 客户端请求超时机制实现<br>WithCORS<br>WithAuthentication  身份验证<br>WithAudit               审计<br>WithImpersonation<br>WithAuthorization   授权</p>
+<p>认证<br>authentication注册： pkg/kubeapiserver/options/authentication.go BuiltInAuthenticationOptions.ApplyTo() -&gt; authenticatorConfig.New()</p>
+<p>授权<br>Authorizer注册：<br>cmd/kube-apiserver/app/server.go    buildGenericConfig().BuildAuthorizer()<br> |<br> pkg/kubeapiserver/authorizer/config.go New()</p>
+<p>准入控制<br>admissionPlugin注册： pkg/kubeapiserver/options/admissions.go  NewAdmissionOptions() 先注册mutating/validating，再注册buildin<br>cmd/kube-apiserver/app/server.go    buildGenericConfig().(Admission.ApplyTo())</p>
 
     </div>
 
